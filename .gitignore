@@ -17,3 +17,10 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+
+# Archivos de prueba y diagnóstico temporal
+test_quickchart.php
+check_logs.bat
+public/test_charts.php
+storage/app/livewire-tmp/*.png
+
