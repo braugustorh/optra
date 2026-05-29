@@ -22,6 +22,8 @@ use Filament\Tables\Table;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\HtmlString;
+use App\Services\GeneralReportService;
 
 class PsychometricDashboard extends Page implements HasTable
 {
@@ -32,15 +34,28 @@ class PsychometricDashboard extends Page implements HasTable
     protected static ?string $navigationLabel = 'Dashboard Psicometrías';
     protected static ?int $navigationSort = 3;
 
-    // Mapeo de puestos a IDs de evaluaciones
-    // 9=WES, 10=Moss, 11=Cleaver, 12=Kostick
+    // 9=MossWess, 10=Moss, 11=Cleaver, 12=Kostick, 13=Terman-Merril
+    // Modelo de Assessment Psicométrico Estratificado (aplica igual a Int/Ext)
+    // "op" = opcional → se pre-carga para que RH pueda desmarcar si no aplica
     const PUESTO_EVALUACIONES = [
-        'Directivo'    => [10, 11, 12, 9],
-        'Mando Medio'  => [11, 12, 10, 9],
-        'Supervisor'   => [11, 12, 9],
-        'Administrativo' => [12, 11, 9],
+        'Directivo'      => [13, 11, 12, 10, 9], // Terman + Cleaver + Kostick + Moss + MossWess
+        'Mando Medio'    => [13, 11, 12, 10, 9], // Terman + Cleaver + Kostick + Moss + MossWess
+        'Supervisor'     => [13, 11],    // Terman + Cleaver + Kostick(op) + Moss(op)
+        'Administrativo' => [13, 11],            // Terman + Cleaver
     ];
 
+    /**
+     * Matriz de pruebas OBLIGATORIAS por puesto (para validar completitud del reporte).
+     * Basada en el Modelo de Assessment Psicométrico Estratificado.
+     * Las pruebas marcadas como "opcional" en Supervisión no bloquean la generación del reporte.
+     *   9=MossWess, 10=Moss, 11=Cleaver, 12=Kostick, 13=Terman-Merril
+     */
+    const PUESTO_OBLIGATORIAS = [
+        'Directivo'      => [13, 11, 12, 10, 9], // Terman + Cleaver + Kostick + Moss + MossWess
+        'Mando Medio'    => [13, 11, 12, 10, 9], // Terman + Cleaver + Kostick + Moss + MossWess
+        'Supervisor'     => [13, 11],            // Terman + Cleaver (Kostick/Moss son opcionales)
+        'Administrativo' => [13, 11],            // Terman + Cleaver
+    ];
     // Propiedades para filtros
     public $statusFilter = '';
     public $typeFilter = '';
@@ -228,7 +243,7 @@ class PsychometricDashboard extends Page implements HasTable
                     // 4. Selección de Evaluaciones (se pre-llena según puesto)
                     Select::make('evaluation_type_ids')
                         ->label('Batería de Evaluaciones')
-                        ->options(EvaluationsTypes::whereIN('id', [9, 10, 11, 12])->pluck('name', 'id'))
+                        ->options(EvaluationsTypes::whereIN('id', [9, 10, 11, 12,13])->pluck('name', 'id'))
                         ->multiple()
                         ->preload()
                         ->required()
@@ -307,7 +322,7 @@ class PsychometricDashboard extends Page implements HasTable
                     // Selección Múltiple de Exámenes (se pre-llena según puesto)
                     Select::make('evaluation_type_ids')
                         ->label('Batería de Evaluaciones')
-                        ->options(EvaluationsTypes::whereIN('id', [9, 10, 11, 12])->pluck('name', 'id'))
+                        ->options(EvaluationsTypes::whereIN('id', [9, 10, 11, 12,13])->pluck('name', 'id'))
                         ->multiple()
                         ->preload()
                         ->required()
@@ -326,6 +341,208 @@ class PsychometricDashboard extends Page implements HasTable
                         evaluationTypeIds: $data['evaluation_type_ids'],
                         puesto: $data['puesto'] ?? null,
                     );
+                }),
+
+            // ---------------------------------------------------------------
+            // ACCIÓN 3: Generar Reporte General por Batch
+            // ---------------------------------------------------------------
+            Action::make('generate_report')
+                ->label('Generar Reporte General')
+                ->icon('heroicon-o-document-chart-bar')
+                ->color('warning')
+                ->slideOver()
+                ->modalHeading('Generar Reporte General')
+                ->modalDescription('Selecciona la persona y la batería de evaluaciones para generar el reporte consolidado.')
+                ->modalWidth('2xl')
+                ->form([
+                    // 1. Tipo de persona
+                    Forms\Components\Select::make('evaluable_type')
+                        ->label('Tipo de persona')
+                        ->options([
+                            'user'      => '👥 Colaborador Interno',
+                            'candidate' => '🎯 Candidato Externo',
+                        ])
+                        ->required()
+                        ->live()
+                        ->afterStateUpdated(function (Forms\Set $set) {
+                            $set('evaluable_id', null);
+                            $set('batch_id', null);
+                        }),
+
+                    // 2. Selector de persona (depende del tipo)
+                    Forms\Components\Select::make('evaluable_id')
+                        ->label('Persona')
+                        ->options(function (Forms\Get $get) {
+                            $type = $get('evaluable_type');
+                            if (! $type) return [];
+                            if ($type === 'user') {
+                                return User::orderBy('name')
+                                    ->get()
+                                    ->mapWithKeys(fn ($u) => [
+                                        $u->id => trim("{$u->name} {$u->first_name} {$u->last_name}"),
+                                    ]);
+                            }
+                            return Candidate::orderBy('name')->pluck('name', 'id');
+                        })
+                        ->searchable()
+                        ->required()
+                        ->live()
+                        ->afterStateUpdated(fn (Forms\Set $set) => $set('batch_id', null))
+                        ->visible(fn (Forms\Get $get) => (bool) $get('evaluable_type'))
+                        ->placeholder('Buscar persona...'),
+
+                    // 3. Selector de batería (agrupa evaluaciones por batch_id)
+                    Forms\Components\Select::make('batch_id')
+                        ->label('Batería de evaluaciones')
+                        ->hint('Cada batería representa una sesión de asignación')
+                        ->options(function (Forms\Get $get) {
+                            $type = $get('evaluable_type');
+                            $id   = $get('evaluable_id');
+                            if (! $type || ! $id) return [];
+
+                            $modelClass = $type === 'user' ? User::class : Candidate::class;
+
+                            return PsychometricEvaluation::where('evaluable_type', $modelClass)
+                                ->where('evaluable_id', $id)
+                                ->with('evaluationType')
+                                ->orderByDesc('assigned_at')
+                                ->get()
+                                ->groupBy('batch_id')
+                                ->map(function ($evals, $batchId) {
+                                    $first     = $evals->first();
+                                    $completed = $evals->where('status', 'completed')->count();
+                                    $total     = $evals->count();
+                                    $puesto    = $first->puesto ?? 'Sin puesto';
+                                    $date      = $first->assigned_at
+                                        ? \Carbon\Carbon::parse($first->assigned_at)->format('d/m/Y')
+                                        : 'Sin fecha';
+                                    $icon      = $completed === $total ? '✅' : ($completed > 0 ? '🔄' : '⏳');
+                                    return "{$icon} {$puesto} — {$date} ({$completed}/{$total})";
+                                })
+                                ->toArray();
+                        })
+                        ->live()
+
+                        ->required()
+                        ->visible(fn (Forms\Get $get) => (bool) $get('evaluable_id'))
+                        ->placeholder('Seleccionar batería...'),
+
+                    // 4. Panel de vista previa dinámica
+                    Forms\Components\Placeholder::make('preview')
+                        ->label('')
+                        ->content(function (Forms\Get $get): HtmlString {
+                            $batchId = $get('batch_id');
+                            if (! $batchId) {
+                                return new HtmlString('');
+                            }
+                            $data = $this->loadBatchPreview($batchId);
+                            if (empty($data)) {
+                                return new HtmlString(
+                                    '<div style="text-align:center;padding:16px;color:#9ca3af;font-size:13px;">
+                                        No se encontró información para esta batería.
+                                    </div>'
+                                );
+                            }
+                            return new HtmlString(
+                                view('filament.pages.partials.batch-preview', ['batchData' => $data])->render()
+                            );
+                        })
+                        ->visible(fn (Forms\Get $get) => (bool) $get('batch_id')),
+                ])
+                ->modalSubmitActionLabel('Generar Reporte')
+                ->action(function (array $data) {
+                    $batchId = $data['batch_id'] ?? null;
+                    if (! $batchId) {
+                        Notification::make()->title('Selecciona una batería')->warning()->send();
+                        return;
+                    }
+
+                    $preview = $this->loadBatchPreview($batchId);
+
+                    if (! ($preview['can_generate'] ?? false)) {
+                        $missing = implode(', ', $preview['missing_required'] ?? []);
+                        Notification::make()
+                            ->title('Evaluaciones incompletas')
+                            ->body("Faltan las siguientes pruebas requeridas: {$missing}")
+                            ->warning()
+                            ->send();
+                        return;
+                    }
+
+                    // ─── Comunicación entre servicios ───────────────────────
+                    // GeneralReportService calcula los resultados psicométricos,
+                    // luego llama a DeepSeekService para el análisis IA.
+                    $generalService = new GeneralReportService();
+                    $deepSeekService = app(\App\Services\DeepSeekService::class);
+
+                    $output = $generalService->generateAiReport($batchId, $deepSeekService);
+                    // ────────────────────────────────────────────────────────
+
+                    if (isset($output['error'])) {
+                        Notification::make()
+                            ->title('Error al generar reporte')
+                            ->body($output['error'])
+                            ->danger()
+                            ->send();
+                        return;
+                    }
+
+                    // ─── Notificar si la IA falló (pero continuar con los resultados psicométricos) ──
+                    if (isset($output['ai_error'])) {
+                        $aiErrMsg = $output['ai_error']['message'] ?? 'Error desconocido';
+                        $aiErrCode = $output['ai_error']['code'] ?? '';
+
+                        $friendlyMsg = match(true) {
+                            str_contains(strtolower($aiErrMsg), 'insufficient balance')
+                                => 'La cuenta de DeepSeek no tiene saldo suficiente. Recarga en platform.deepseek.com y vuelve a intentarlo.',
+                            str_contains(strtolower($aiErrMsg), 'rate limit')
+                                => 'Se alcanzó el límite de solicitudes de DeepSeek. Intenta en unos minutos.',
+                            default => "Error de IA [{$aiErrCode}]: {$aiErrMsg}",
+                        };
+
+                        Notification::make()
+                            ->title('⚠️ Análisis de IA no disponible')
+                            ->body($friendlyMsg . "\n\nEl reporte con resultados psicométricos se descargará de todas formas.")
+                            ->warning()
+                            ->duration(8000)
+                            ->send();
+                    }
+
+                    // ─── Guardar reporte en Cache (1 hora) y redirigir a previsualización ─────────────────────────
+                    $reportKey = (string) Str::uuid();
+
+                    $name   = $output['consolidated']['evaluable']->name ?? 'candidato';
+                    $puesto = $output['consolidated']['puesto'] ?? 'general';
+
+                    $analisisIa = $output['ai_report'] ? $output['ai_report'] : null;
+
+                    $reportDataToCache = [
+                        'meta' => [
+                            'candidato'      => $name,
+                            'puesto'         => $puesto,
+                            'batch_id'       => $batchId,
+                            'tiempo_total'   => $output['consolidated']['total_elapsed_formatted'],
+                            'generado_en'    => now()->toDateTimeString(),
+                        ],
+                        'candidate_data' => [
+                            'name'   => $name,
+                            'puesto' => $puesto,
+                        ],
+                        'psychometric_results' => collect($output['consolidated']['tests'])
+                            ->map(fn ($t) => [
+                                'prueba'     => $t['test_name'],
+                                'tiempo'     => $t['elapsed_formatted'],
+                                'resultados' => $t['results'],
+                            ])->values()->toArray(),
+                        'competencias' => $output['competencias'] ?? [],
+                        'cleaver_ideal' => $output['cleaver_ideal'] ?? ['D' => 50, 'I' => 50, 'S' => 50, 'C' => 50],
+                        'ai_report' => $analisisIa,
+                    ];
+
+                    \Illuminate\Support\Facades\Cache::put("psych_report_{$reportKey}", $reportDataToCache, now()->addHours(1));
+
+                    // Redirigir a la nueva ventana de preview
+                    return redirect()->route('psychometric.report.preview', $reportKey);
                 }),
 
             Action::make('configuration')
@@ -485,9 +702,58 @@ class PsychometricDashboard extends Page implements HasTable
     }
 
     // -----------------------------------------------------------------------
-// FUNCIÓN AUXILIAR (Para no repetir código)
-// -----------------------------------------------------------------------
-// Esta función encapsula la lógica "difícil" para que tus acciones queden limpias
+    // HELPER: Carga la vista previa de un batch para el modal de reporte
+    // -----------------------------------------------------------------------
+    protected function loadBatchPreview(string $batchId): array
+    {
+        $evaluations = PsychometricEvaluation::where('batch_id', $batchId)
+            ->with(['evaluable', 'evaluationType'])
+            ->get();
+
+        if ($evaluations->isEmpty()) {
+            return [];
+        }
+
+        $first           = $evaluations->first();
+        $puesto          = $first->puesto;
+        $requiredTypeIds = self::PUESTO_OBLIGATORIAS[$puesto] ?? [];
+
+        $evalData = $evaluations->map(function ($eval) use ($requiredTypeIds) {
+            return [
+                'test_name'       => $eval->evaluationType->name ?? 'Desconocido',
+                'type_id'         => $eval->evaluations_type_id,
+                'status'          => $eval->status,
+                'elapsed_seconds' => max(0, (int) ($eval->elapsed_seconds ?? 0)),
+                'completed_at'    => $eval->completed_at,
+                'is_required'     => in_array($eval->evaluations_type_id, $requiredTypeIds),
+            ];
+        })->sortBy('test_name')->values()->toArray();
+
+        $completedRequiredIds = $evaluations
+            ->where('status', 'completed')
+            ->whereIn('evaluations_type_id', $requiredTypeIds)
+            ->pluck('evaluations_type_id')
+            ->toArray();
+
+        $missingIds   = array_diff($requiredTypeIds, $completedRequiredIds);
+        $missingNames = EvaluationsTypes::whereIn('id', $missingIds)->pluck('name')->toArray();
+
+        return [
+            'evaluable_name'   => $first->evaluable->name ?? 'Desconocido',
+            'puesto'           => $puesto ?? 'Sin puesto',
+            'batch_id'         => $batchId,
+            'assigned_at'      => $first->assigned_at,
+            'total_elapsed'    => (int) $evaluations->sum('elapsed_seconds'),
+            'evaluations'      => $evalData,
+            'can_generate'     => empty($missingIds),
+            'missing_required' => $missingNames,
+        ];
+    }
+
+    // -----------------------------------------------------------------------
+    // FUNCIÓN AUXILIAR (Para no repetir código)
+    // -----------------------------------------------------------------------
+    // Esta función encapsula la lógica "difícil" para que tus acciones queden limpias
     protected function createBatchEvaluations($evaluableId, $evaluableType, $evaluationTypeIds, $puesto = null)
     {
         $batchId = Str::uuid();

@@ -19,6 +19,18 @@ use Illuminate\Database\Eloquent\Builder;
 
 class PsychometricEvaluationResource extends Resource
 {
+
+    public static function canViewAny(): bool
+    {
+
+        return (\auth()->user()->hasAnyRole('Administrador'));
+
+    }
+
+
+
+
+
     protected static ?string $model = PsychometricEvaluation::class;
     protected static ?string $navigationIcon = 'heroicon-o-academic-cap';
     protected static ?string $navigationLabel = 'Psicometrías';
@@ -253,9 +265,6 @@ class PsychometricEvaluationResource extends Resource
         return static::getModel()::where('status', 'in_progress')->count();
     }
     //Se agrega función para que solo la persona con permiso pueda ver el recurso
-    public static function canViewAny(): bool
-    {
-        return auth()->user()->hasAnyRole(['Administrador','RH Corp']);
-    }
+
 
 }

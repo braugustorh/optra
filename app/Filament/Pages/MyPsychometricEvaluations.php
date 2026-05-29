@@ -15,6 +15,12 @@ use Illuminate\Database\Eloquent\Builder;
 
 class MyPsychometricEvaluations extends Page implements HasTable
 {
+    /*public static function canAccess(): bool
+    {
+        return auth()->check() && auth()->user()->can('view-page my-psychometric-evaluations');
+    }
+    */
+
     use InteractsWithTable;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';

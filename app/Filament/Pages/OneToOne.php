@@ -33,6 +33,8 @@ use mysql_xdevapi\Collection;
 
 class OneToOne extends Page implements HasForms
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     use InteractsWithForms;
     public ?array $data = [];
     protected static ?string $navigationIcon = 'heroicon-m-chat-bubble-left-right';
@@ -104,8 +106,7 @@ class OneToOne extends Page implements HasForms
     }
     public static function shouldRegisterNavigation(): bool
     {
-        // Esto controla la visibilidad en la navegación.
-        return static::canView();
+        return false;
     }
     public function mount($evaluationId = null)
         //Esto se debe de quitar para que no dependa de una campaña.

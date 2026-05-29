@@ -26,6 +26,8 @@ use Livewire\Attributes\On;
 
 class Panel9Box extends Page implements HasTable
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     use InteractsWithTable;
     protected static ?string $navigationIcon = 'heroicon-c-squares-plus';
     protected static ?string $navigationLabel = ' Panel 9Box';
@@ -86,8 +88,7 @@ class Panel9Box extends Page implements HasTable
     }
     public static function shouldRegisterNavigation(): bool
     {
-        // Esto controla la visibilidad en la navegación.
-        return static::canView();
+        return false;
     }
     //protected static ?string $model = Evaluation360Response::class;
     public function mount(){

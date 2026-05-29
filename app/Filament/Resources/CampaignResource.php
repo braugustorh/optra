@@ -28,6 +28,8 @@ use Illuminate\Support\Facades\Auth;
 
 class CampaignResource extends Resource
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $model = Campaign::class;
 
     protected static ?string $navigationIcon = 'heroicon-s-calendar-days';

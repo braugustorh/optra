@@ -26,7 +26,7 @@ class SedeResource extends Resource
     protected static ?string $model = Sede::class;
     public static ?string $cp = null;
     protected static ?string $navigationIcon = 'heroicon-o-building-office-2';
-    protected static ?string $navigationGroup = 'ADC Estructura';
+    protected static ?string $navigationGroup = 'Optra Estructura';
     public static function canViewAny(): bool
     {
         return \auth()->user()->hasAnyRole('Administrador','RH Corp','Visor');
@@ -106,6 +106,11 @@ class SedeResource extends Resource
                     ->numeric()
                     ->required()
                     ->default(0),
+                Forms\Components\Select::make('razonSocials')
+                    ->label('Razones Sociales')
+                    ->relationship('razonSocials', 'name')
+                    ->multiple()
+                    ->preload(),
                 Forms\Components\Toggle::make('status')
                     ->label('Estatus')
                     ->required(),
@@ -122,6 +127,10 @@ class SedeResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('Nombre')
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('razonSocials.name')
+                    ->label('Razones Sociales')
+                    ->badge()
                     ->searchable(),
                 Tables\Columns\TextColumn::make('positions_count')
                     ->label('Count')

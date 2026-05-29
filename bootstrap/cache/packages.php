@@ -82,6 +82,17 @@
       0 => 'Codeat3\\BladeTeenyIcons\\BladeTeenyIconsServiceProvider',
     ),
   ),
+  'deepseek-php/deepseek-laravel' => 
+  array (
+    'aliases' => 
+    array (
+      'DeepseekLaravel' => 'DeepSeek\\DeepseekLaravel\\DeepseekLaravelFacade',
+    ),
+    'providers' => 
+    array (
+      0 => 'DeepSeek\\DeepseekLaravel\\DeepseekLaravelServiceProvider',
+    ),
+  ),
   'eightynine/filament-excel-import' => 
   array (
     'aliases' => 

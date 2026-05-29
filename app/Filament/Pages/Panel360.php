@@ -14,6 +14,8 @@ use Illuminate\Support\Collection;
 
 class Panel360 extends Page
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $navigationIcon = 'heroicon-m-arrow-path';
     protected static ?string $navigationLabel = ' Panel 360';
     protected static ?string $navigationGroup = 'Evaluaciones';
@@ -40,9 +42,7 @@ class Panel360 extends Page
     }
     public static function shouldRegisterNavigation(): bool
     {
-        // Esto controla la visibilidad en la navegación.
-        return static::canView();
-
+        return false;
     }
 
     public function getTitle(): string|Htmlable

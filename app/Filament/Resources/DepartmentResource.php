@@ -19,7 +19,7 @@ use pxlrbt\FilamentExcel\Actions\Tables\ExportBulkAction;
 class DepartmentResource extends Resource
 {
     protected static ?string $model = Department::class;
-    protected static ?string $navigationGroup = 'ADC Estructura';
+    protected static ?string $navigationGroup = 'Optra Estructura';
     protected static ?string $navigationLabel = 'Departamentos';
     protected static ?int $navigationSort = 2;
 

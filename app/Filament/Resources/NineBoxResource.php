@@ -15,6 +15,8 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class NineBoxResource extends Resource
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $model = NineBox::class;
     protected static ?string $navigationGroup = 'Evaluaciones';
     protected static ?string $navigationLabel = 'NineBox';

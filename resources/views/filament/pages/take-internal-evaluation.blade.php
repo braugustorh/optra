@@ -3,21 +3,77 @@
         showGlosarioModal: false,
         elapsedSeconds: @js($accumulatedSeconds),
         timerInterval: null,
+        seriesTimeRemaining: 0,
+       seriesTimeRemaining: @js($timeRemainingForSeries ?? 0),
+        seriesTimerInterval: null,
+
+        init() {
+            // Reanudar cronómetro global si la prueba ya estaba en curso (recarga de página)
+            @if(!$showWelcome)
+            this.startTimer();
+            @endif
+            // Reanudar cronómetro de serie si hay tiempo restante calculado por servidor (recarga mid-serie)
+            @if(!$showWelcome && !$showSeriesInstructions && ($timeRemainingForSeries ?? 0) > 0)
+            this.resumeSeriesTimer(this.seriesTimeRemaining);
+            @endif
+        },
+
         formatTime(s) {
+            if (s <= 0) return '00:00';
+            s = Math.floor(s);
             const h = Math.floor(s / 3600);
             const m = Math.floor((s % 3600) / 60);
-            const sec = s % 60;
+            const sec = Math.floor(s % 60);
             if (h > 0) {
                 return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
             }
             return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
         },
+
         startTimer() {
             if (this.timerInterval) return;
             this.timerInterval = setInterval(() => { this.elapsedSeconds++; }, 1000);
-        }
+        },
+
+        stopTimer() {
+            if (this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
+        },
+
+        startSeriesTimer(limit) {
+            if (this.seriesTimerInterval) clearInterval(this.seriesTimerInterval);
+            this.seriesTimeRemaining = limit;
+            this._runSeriesCountdown();
+        },
+
+        resumeSeriesTimer(remaining) {
+            if (this.seriesTimerInterval) clearInterval(this.seriesTimerInterval);
+            this.seriesTimeRemaining = remaining;
+            this._runSeriesCountdown();
+        },
+
+        _runSeriesCountdown() {
+            this.seriesTimerInterval = setInterval(() => {
+                if (this.seriesTimeRemaining > 0) {
+                    this.seriesTimeRemaining--;
+                } else {
+                    clearInterval(this.seriesTimerInterval);
+                    this.seriesTimerInterval = null;
+                    $wire.call('timeUpForSeries');
+                }
+            }, 1000);
+        },
+
+        stopSeriesTimer() {
+            if (this.seriesTimerInterval) {
+                clearInterval(this.seriesTimerInterval);
+                this.seriesTimerInterval = null;
+            }
+            this.seriesTimeRemaining = 0;
+        },
     }"
     @test-started.window="startTimer()"
+    @series-started.window="startSeriesTimer($event.detail[0].limit)"
+    x-on:stop-series-timer.window="stopSeriesTimer()"
 >
 
     @if($showWelcome)
@@ -41,6 +97,49 @@
             </x-filament::section>
         </div>
 
+    @elseif($showSeriesInstructions)
+        {{-- ================================================================ --}}
+        {{-- PANTALLA INTERMEDIA: INSTRUCCIONES DE SERIE (Terman-Merril)      --}}
+        {{-- ================================================================ --}}
+        <div class="max-w-4xl mx-auto">
+            <x-filament::section>
+                <div class="text-center py-6">
+                    {{-- Encabezado con nombre de la serie --}}
+                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary-100 dark:bg-primary-900/30 mb-4">
+                        <svg class="w-8 h-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        </svg>
+                    </div>
+
+                    <h2 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-3xl mb-2">
+                        {{ $seriesName }}
+                    </h2>
+
+                    {{-- Tiempo límite de la serie --}}
+                    @if($seriesTimeLimitSeconds > 0)
+                    <div class="inline-flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 px-4 py-2 rounded-full text-sm font-semibold mb-6">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Tiempo límite: {{ $seriesTimeLimitSeconds / 60 }} minutos
+                    </div>
+                    @endif
+
+                    {{-- Instrucciones de la serie desde el modelo Competence --}}
+                    <div class="prose dark:prose-invert max-w-none text-left mb-8 bg-gray-50 dark:bg-gray-800 p-6 rounded-lg">
+                        <p class="font-semibold mb-2">Instrucciones de esta sección:</p>
+                        <div class="whitespace-pre-line text-gray-600 dark:text-gray-300">
+                            {!! nl2br(e($seriesInstructions)) !!}
+                        </div>
+                    </div>
+
+                    <x-filament::button wire:click="startSeries" size="xl">
+                        Comenzar Sección
+                    </x-filament::button>
+                </div>
+            </x-filament::section>
+        </div>
+
     @elseif($question)
         {{-- PANTALLA DE PREGUNTA --}}
         <div class="max-w-4xl mx-auto space-y-6">
@@ -50,13 +149,24 @@
                 <div class="flex justify-between items-center text-sm font-medium text-gray-500 dark:text-gray-400">
                     <div class="flex items-center gap-3">
                         <span>Pregunta {{ $currentQuestionIndex + 1 }} de {{ $totalQuestions }}</span>
-                        {{-- TIMER --}}
+                        {{-- TIMER total transcurrido --}}
                         <span class="inline-flex items-center gap-1 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 px-3 py-1 rounded-full font-mono text-xs font-semibold">
                             <svg class="w-3.5 h-3.5 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
                             <span x-text="formatTime(elapsedSeconds)">00:00</span>
                         </span>
+
+                        {{-- Timer de serie (solo cuando la serie tiene límite de tiempo) --}}
+                        @if($timeRemainingForSeries !== null)
+                        <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full font-mono text-xs font-bold"
+                              :class="seriesTimeRemaining <= 30 ? 'bg-red-100 text-red-700 animate-pulse dark:bg-red-900/30 dark:text-red-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400'">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Serie:&nbsp;<span >Serie:&nbsp;<span>{{ str_pad((int)($seriesTimeLimitSeconds/60), 2, '0', STR_PAD_LEFT) }}:00</span></span>
+                        </span>
+                        @endif
                     </div>
                     <div class="flex items-center gap-2">
                         {{-- BOTÓN GLOSARIO (solo Cleaver) --}}

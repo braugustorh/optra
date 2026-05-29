@@ -14,6 +14,8 @@ use crypt;
 
 class OrganizationalClimate extends Page
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $navigationIcon = 'heroicon-m-check-badge';
     protected static ?string $navigationLabel = 'Test de Clima Organizacional';
     protected static ?string $navigationGroup = 'Clima Organizacional';

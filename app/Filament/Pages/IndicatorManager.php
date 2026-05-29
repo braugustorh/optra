@@ -15,6 +15,8 @@ use Filament\Support\Exceptions\Halt;
 
 class IndicatorManager extends Page
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $navigationIcon = 'heroicon-m-document-check';
     protected static string $view = 'filament.pages.indicator-manager';
     protected static ?string $navigationLabel = 'Registro de Avance';
@@ -49,8 +51,7 @@ class IndicatorManager extends Page
     }
     public static function shouldRegisterNavigation(): bool
     {
-        // Esto controla la visibilidad en la navegación.
-        return static::canView();
+        return false;
     }
 
     protected function getForms(): array

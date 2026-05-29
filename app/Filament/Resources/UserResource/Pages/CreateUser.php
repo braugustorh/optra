@@ -289,6 +289,18 @@ class CreateUser extends CreateRecord
                         ->searchable()
                         ->relationship('sede', 'name')
                         ->default(null),
+                    Select::make('razon_social_id')
+                        ->label('Razón Social Operativa')
+                        ->options(function (Get $get) {
+                            $sedeId = $get('sede_id');
+                            if (!$sedeId) {
+                                return [];
+                            }
+                            return \App\Models\Sede::find($sedeId)->razonSocials->pluck('name', 'id');
+                        })
+                        ->searchable()
+                        ->preload()
+                        ->default(null),
                     Select::make('department_id')
                         ->label('Departamento')
                         ->live()

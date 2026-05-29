@@ -1,0 +1,1 @@
+<?php require 'vendor/autoload.php'; use Symfony\Component\Finder\Finder; $finder = Finder::create()->in('app/Filament')->name('*.php')->sortByName(); foreach ($finder as $file) { echo $file->getRealPath() . PHP_EOL; }

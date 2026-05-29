@@ -15,6 +15,8 @@ use Filament\Notifications\Notification;
 
 class ComunicadosManager extends Page
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $navigationIcon = 'heroicon-s-chat-bubble-oval-left-ellipsis';
 
 
@@ -38,8 +40,7 @@ class ComunicadosManager extends Page
     }
     public static function shouldRegisterNavigation(): bool
     {
-        // Esto controla la visibilidad en la navegación.
-        return static::canView();
+        return false;
     }
     public function form(Form $form): Form
     {

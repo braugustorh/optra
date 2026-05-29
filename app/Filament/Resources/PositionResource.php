@@ -26,7 +26,7 @@ class PositionResource extends Resource
     protected static ?string $model = Position::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-identification';
-    protected static ?string $navigationGroup = 'ADC Estructura';
+    protected static ?string $navigationGroup = 'Optra Estructura';
     protected static ?string $navigationLabel = 'Puestos';
     protected static ?int $navigationSort = 3;
     public static function canViewAny(): bool

@@ -25,6 +25,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class EvaluationAssignResource extends Resource
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $model = EvaluationAssign::class;
 
     protected static ?string $navigationIcon = 'mdi-spider-web';

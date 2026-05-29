@@ -12,16 +12,18 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
+        $schedule->command('vacations:renew-balances')->daily();
+
+        /*
         $schedule->command('app:verify-execution')
             ->everyMinute()
             ->appendOutputTo(storage_path('logs/laravel.log'));
         $schedule->command('campaign:update-status')
             ->everyMinute()
             ->appendOutputTo(storage_path('logs/campaign_update.log'));
-
+    */
 
     }
-
     /**
      * Register the commands for the application.
      */

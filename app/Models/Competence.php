@@ -13,7 +13,9 @@ class Competence extends Model
         'description',
         'evaluations_type_id',
         'status',
-        'level'
+        'level',
+        'time_limit_minutes',
+        'instructions'
     ];
     public function evaluationType()
     {

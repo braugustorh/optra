@@ -34,6 +34,10 @@ class PsychometricEvaluation extends Model
         'interpretation_document_url',
         'elapsed_seconds',
         'puesto',
+        'current_series_id',
+        'current_series_started_at',
+        'is_invalidated',
+        'invalidated_reason'
     ];
 
     protected $casts = [
@@ -42,6 +46,8 @@ class PsychometricEvaluation extends Model
         'completed_at' => 'datetime',
         'expires_at' => 'datetime',
         'response_summary' => 'array',
+        'current_series_started_at' => 'datetime',
+        'is_invalidated' => 'boolean',
     ];
 
     // Relaciones con estructura existente

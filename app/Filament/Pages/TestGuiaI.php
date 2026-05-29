@@ -85,6 +85,8 @@ class TestGuiaI extends Page
             return false;
         }
     }
+
+
     public static function shouldRegisterNavigation(): bool
     {
         // Esto controla la visibilidad en la navegación.

@@ -1,6 +1,6 @@
 <?php
 
-namespace Filament\Widgets;
+namespace App\Filament\Resources\DashboardResource\Widgets;
 
 
 use Filament\Widgets\Widget;

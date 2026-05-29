@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Models\ActiveSurvey;
 use App\Models\EvaluationsTypes;
+use App\Models\IdentifiedCollaborator;
 use App\Models\Nom035Process;
 use App\Models\Question;
 use App\Models\RiskFactorSurvey;
@@ -149,6 +150,8 @@ class RiskFactorTestOrgEnviroment extends Page
 
         return $activeSurvey !== null;
     }
+
+
     public static function shouldRegisterNavigation(): bool
     {
         // Esto controla la visibilidad en la navegación.

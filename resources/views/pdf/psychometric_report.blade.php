@@ -56,9 +56,10 @@
         };
 
         // 2. Identificar el Tipo de Prueba
-        $testName = $results['test_name'] ?? '';
+        $testName  = $results['test_name'] ?? '';
         $isCleaver = $testName === 'Cleaver (DISC)';
         $isKostick = str_contains($testName, 'Kostick');
+        $isTerman  = str_contains($testName, 'Terman');
 
         // 3. Extracción de Datos
         if ($isCleaver) {
@@ -72,6 +73,29 @@
             $kostickFactores      = $results['factoresAgrupados'] ?? [];
             $kostickInterpretacion= $results['kostickInterpretation'] ?? [];
             $kostickOrder         = ['G','L','I','T','V','S','R','D','C','E','Z','K','F','W','N','A','P','X','B','O'];
+        } elseif ($isTerman) {
+            $termanBruto     = $results['puntaje_bruto'] ?? 0;
+            $termanCI        = $results['ci_score'] ?? '—';
+            $termanClasCI    = $results['clasificacion_ci'] ?? 'Sin clasificación';
+            $termanClasAp    = $results['clasificacion_capacidad'] ?? 'Sin clasificación';
+            $termanSeries    = $results['series'] ?? [];
+            $termanResumen   = $results['resumen'] ?? '';
+
+            // Helper de color específico para clasificaciones Terman
+            $getTermanColor = function(string $c): array {
+                $cl = strtolower($c);
+                if (str_contains($cl, 'sobresaliente'))    return ['bg' => '#10b981', 'border' => '#059669', 'text' => '#064e3b', 'light' => '#d1fae5'];
+                if (str_contains($cl, 'superior'))         return ['bg' => '#34d399', 'border' => '#10b981', 'text' => '#065f46', 'light' => '#ecfdf5'];
+                if (str_contains($cl, 'medio alto'))       return ['bg' => '#3b82f6', 'border' => '#2563eb', 'text' => '#1e3a8a', 'light' => '#dbeafe'];
+                if (str_contains($cl, 'normal'))           return ['bg' => '#6366f1', 'border' => '#4f46e5', 'text' => '#312e81', 'light' => '#e0e7ff'];
+                if (str_contains($cl, 'medio bajo'))       return ['bg' => '#f59e0b', 'border' => '#d97706', 'text' => '#78350f', 'light' => '#fef3c7'];
+                if (str_contains($cl, 'inferior'))         return ['bg' => '#f97316', 'border' => '#ea580c', 'text' => '#7c2d12', 'light' => '#ffedd5'];
+                if (str_contains($cl, 'deficiente'))       return ['bg' => '#ef4444', 'border' => '#dc2626', 'text' => '#7f1d1d', 'light' => '#fee2e2'];
+                return ['bg' => '#6b7280', 'border' => '#4b5563', 'text' => '#1f2937', 'light' => '#f3f4f6'];
+            };
+
+            $termanCIColors   = $getTermanColor($termanClasCI);
+            $termanApColors   = $getTermanColor($termanClasAp);
         } else {
             $globalRange = $results['range'] ?? 'N/A';
             $globalColors = $getColorHex($globalRange);
@@ -468,6 +492,118 @@
                 </div>
             </div>
         @endforeach
+
+    @elseif($isTerman)
+        {{-- ========================================================= --}}
+        {{-- RENDERIZADO TERMAN-MERRIL (CI)                            --}}
+        {{-- ========================================================= --}}
+
+        {{-- ── CABECERA ─────────────────────────────────────────────── --}}
+        <div class="relative overflow-hidden rounded-xl bg-white border border-gray-200 shadow-sm avoid-break mb-6">
+            <div class="absolute left-0 top-0 bottom-0 w-2" style="background-color: {{ $termanCIColors['bg'] }};"></div>
+            <div class="p-5 pl-7">
+                <div class="flex justify-between items-start gap-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-900 tracking-tight">Test de Inteligencia Terman-Merril</h3>
+                        <p class="text-sm text-gray-500 mt-1">Medición del Coeficiente Intelectual (CI) en 10 series de habilidades cognitivas.</p>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <span class="text-[10px] uppercase tracking-wider font-bold text-gray-400 block mb-1">Clasificación CI</span>
+                        <span class="px-4 py-1.5 rounded-full text-sm font-bold shadow-sm"
+                              style="background-color: {{ $termanCIColors['light'] }}; color: {{ $termanCIColors['text'] }}; border: 1px solid {{ $termanCIColors['border'] }};">
+                            {{ $termanClasCI }}
+                        </span>
+                    </div>
+                </div>
+
+                {{-- 4 indicadores clave --}}
+                <div class="grid grid-cols-4 gap-3 mt-5">
+                    <div class="bg-gray-50 rounded-lg border border-gray-200 p-3 text-center">
+                        <span class="block text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1">Puntaje Bruto</span>
+                        <span class="text-3xl font-black text-gray-800">{{ $termanBruto }}</span>
+                        <span class="block text-[10px] text-gray-400 mt-0.5">/ 207 máx.</span>
+                    </div>
+                    <div class="rounded-lg border p-3 text-center"
+                         style="background-color: {{ $termanCIColors['light'] }}; border-color: {{ $termanCIColors['border'] }};">
+                        <span class="block text-[10px] uppercase tracking-widest font-bold mb-1" style="color: {{ $termanCIColors['text'] }}">CI</span>
+                        <span class="text-3xl font-black" style="color: {{ $termanCIColors['text'] }}">{{ $termanCI }}</span>
+                        <span class="block text-[10px] mt-0.5" style="color: {{ $termanCIColors['text'] }}">Coeficiente Intelectual</span>
+                    </div>
+                    <div class="rounded-lg border p-3 text-center"
+                         style="background-color: {{ $termanCIColors['light'] }}; border-color: {{ $termanCIColors['border'] }};">
+                        <span class="block text-[10px] uppercase tracking-widest font-bold mb-1" style="color: {{ $termanCIColors['text'] }}">Nivel Intelectual</span>
+                        <span class="text-base font-black leading-tight" style="color: {{ $termanCIColors['text'] }}">{{ $termanClasCI }}</span>
+                    </div>
+                    <div class="rounded-lg border p-3 text-center"
+                         style="background-color: {{ $termanApColors['light'] }}; border-color: {{ $termanApColors['border'] }};">
+                        <span class="block text-[10px] uppercase tracking-widest font-bold mb-1" style="color: {{ $termanApColors['text'] }}">Cap. Aprendizaje</span>
+                        <span class="text-base font-black leading-tight" style="color: {{ $termanApColors['text'] }}">{{ $termanClasAp }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {{-- ── TABLA DE RESULTADOS POR SERIE ───────────────────────── --}}
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden avoid-break mb-6">
+            <div class="bg-gray-50 border-b border-gray-200 px-5 py-3">
+                <h4 class="font-bold text-gray-800 text-sm">Resultados por Serie</h4>
+                <p class="text-[10px] text-gray-400 mt-0.5">Cada serie evalúa una habilidad cognitiva específica.</p>
+            </div>
+            @php
+                $maxPorSerie = [1=>16, 2=>22, 3=>30, 4=>18, 5=>24, 6=>20, 7=>20, 8=>17, 9=>18, 10=>22];
+            @endphp
+            <div class="divide-y divide-gray-100">
+                @foreach($termanSeries as $num => $serie)
+                    @php
+                        $sc  = $getTermanColor($serie['clasificacion']);
+                        $max = $maxPorSerie[$num] ?? 30;
+                        $pct = $max > 0 ? min(100, round(($serie['puntaje'] / $max) * 100)) : 0;
+                    @endphp
+                    <div class="px-5 py-3 flex items-center gap-4 avoid-break">
+                        <div class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white"
+                             style="background-color: {{ $sc['bg'] }};">{{ $num }}</div>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-semibold text-gray-800 truncate">{{ $serie['nombre'] }}</p>
+                            <div class="w-full bg-gray-100 rounded-full h-1.5 mt-1.5">
+                                <div class="h-1.5 rounded-full" style="width: {{ $pct }}%; background-color: {{ $sc['bg'] }};"></div>
+                            </div>
+                        </div>
+                        <div class="shrink-0 w-14 text-center">
+                            <span class="text-xl font-black text-gray-800">{{ $serie['puntaje'] }}</span>
+                            <span class="text-[9px] text-gray-400 block">/ {{ $max }}</span>
+                        </div>
+                        <div class="shrink-0 w-36 text-right">
+                            <span class="text-xs font-bold px-2.5 py-1 rounded-full"
+                                  style="background-color: {{ $sc['light'] }}; color: {{ $sc['text'] }}; border: 1px solid {{ $sc['border'] }};">
+                                {{ $serie['clasificacion'] }}
+                            </span>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+
+        {{-- ── ESCALA DE REFERENCIA DE CI ──────────────────────────── --}}
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5 avoid-break">
+            <h4 class="font-bold text-gray-700 text-sm mb-3">Escala de Referencia — Clasificación del CI</h4>
+            <div class="flex flex-wrap gap-2 text-[10px] font-bold">
+                @foreach([
+                    ['label'=>'Sobresaliente',      'range'=>'≥ 140', 'c'=>'#10b981','l'=>'#d1fae5','t'=>'#064e3b'],
+                    ['label'=>'Superior',            'range'=>'120-139','c'=>'#34d399','l'=>'#ecfdf5','t'=>'#065f46'],
+                    ['label'=>'Término Medio Alto',  'range'=>'110-119','c'=>'#3b82f6','l'=>'#dbeafe','t'=>'#1e3a8a'],
+                    ['label'=>'Normal',              'range'=>'90-109', 'c'=>'#6366f1','l'=>'#e0e7ff','t'=>'#312e81'],
+                    ['label'=>'Término Medio Bajo',  'range'=>'80-89', 'c'=>'#f59e0b','l'=>'#fef3c7','t'=>'#78350f'],
+                    ['label'=>'Inferior',            'range'=>'70-79', 'c'=>'#f97316','l'=>'#ffedd5','t'=>'#7c2d12'],
+                    ['label'=>'Deficiente',          'range'=>'< 70',  'c'=>'#ef4444','l'=>'#fee2e2','t'=>'#7f1d1d'],
+                ] as $level)
+                    <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border"
+                         style="background-color: {{ $level['l'] }}; border-color: {{ $level['c'] }}; color: {{ $level['t'] }};">
+                        <span class="w-2 h-2 rounded-full shrink-0" style="background-color: {{ $level['c'] }};"></span>
+                        {{ $level['label'] }} <span class="font-normal opacity-70">({{ $level['range'] }})</span>
+                    </div>
+                @endforeach
+            </div>
+        </div>
 
     @else
         {{-- ========================================================= --}}

@@ -3,33 +3,85 @@
         showGlosarioModal: false,
         elapsedSeconds: @js($accumulatedSeconds),
         timerInterval: null,
+        seriesTimeRemaining: @js($timeRemainingForSeries ?? 0),
+        seriesTimerInterval: null,
+
+        init() {
+            // Reanudar cronómetro global si la prueba ya estaba en curso (recarga de página)
+            @if(!$showWelcome)
+            this.startTimer();
+            @endif
+            // Reanudar cronómetro de serie si hay tiempo restante calculado por servidor (recarga mid-serie)
+            @if(!$showWelcome && !$showSeriesInstructions && ($timeRemainingForSeries ?? 0) > 0)
+            this.resumeSeriesTimer(this.seriesTimeRemaining);
+            @endif
+        },
+
         formatTime(s) {
+            if (s <= 0) return '00:00';
+            s = Math.floor(s); // Asegurar entero (diffInSeconds puede retornar float)
             const h = Math.floor(s / 3600);
             const m = Math.floor((s % 3600) / 60);
-            const sec = s % 60;
+            const sec = Math.floor(s % 60);
             if (h > 0) {
                 return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
             }
             return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
         },
+
         startTimer() {
             if (this.timerInterval) return;
             this.timerInterval = setInterval(() => { this.elapsedSeconds++; }, 1000);
         },
         stopTimer() {
             if (this.timerInterval) { clearInterval(this.timerInterval); this.timerInterval = null; }
-        }
+        },
+
+        // Inicia el cronómetro de serie con un límite NUEVO (primera vez que comienza la sección)
+        startSeriesTimer(limit) {
+            if (this.seriesTimerInterval) clearInterval(this.seriesTimerInterval);
+            this.seriesTimeRemaining = limit;
+            this._runSeriesCountdown();
+        },
+
+        // Reanuda el cronómetro de serie desde el tiempo RESTANTE ya calculado por el servidor
+        resumeSeriesTimer(remaining) {
+            if (this.seriesTimerInterval) clearInterval(this.seriesTimerInterval);
+            this.seriesTimeRemaining = remaining;
+            this._runSeriesCountdown();
+        },
+
+        _runSeriesCountdown() {
+            this.seriesTimerInterval = setInterval(() => {
+                if (this.seriesTimeRemaining > 0) {
+                    this.seriesTimeRemaining--;
+                } else {
+                    clearInterval(this.seriesTimerInterval);
+                    this.seriesTimerInterval = null;
+                    @this.call('timeUpForSeries');
+                }
+            }, 1000);
+        },
+
+        // Detiene el timer de serie explícitamente (llamado desde PHP via dispatch)
+        stopSeriesTimer() {
+            if (this.seriesTimerInterval) {
+                clearInterval(this.seriesTimerInterval);
+                this.seriesTimerInterval = null;
+            }
+            this.seriesTimeRemaining = 0;
+        },
     }"
     @test-started.window="startTimer()"
+    @series-started.window="startSeriesTimer($event.detail[0].limit)"
+    x-on:stop-series-timer.window="stopSeriesTimer()"
 >
 
     @if($showWelcome)
         {{-- ======================================================== --}}
         {{-- PANTALLA 1: TARJETA DE BIENVENIDA E INSTRUCCIONES        --}}
         {{-- ======================================================== --}}
-
-        {{-- Cambiamos el ancho fijo por porcentajes: 100% en móviles, 60% en tablets, y exactamente 40% en pantallas grandes --}}
-        <div class="max-w-2xl mx-auto py-4 px-2 sm:px-4 lg:px-2">
+        <div class="max-w-2xl mx-auto px-4 sm:px-6">
 
             <div class="bg-white shadow-2xl sm:rounded-2xl overflow-hidden">
                 {{-- Encabezado de color --}}
@@ -60,50 +112,104 @@
             </div>
         </div>
 
+    @elseif($showSeriesInstructions)
+        {{-- ======================================================== --}}
+        {{-- PANTALLA INTERMEDIA: INSTRUCCIONES DE SERIE/SECCIÓN       --}}
+        {{-- ======================================================== --}}
+        <div class="max-w-2xl mx-auto px-4 sm:px-6">
+            <div class="bg-white shadow-2xl sm:rounded-2xl overflow-hidden">
+                <div class="bg-indigo-500 px-6 py-10 sm:p-12 text-center">
+                    <h2 class="text-3xl font-extrabold text-white tracking-tight">
+                        {{ $seriesName }}
+                    </h2>
+                    @if($seriesTimeLimitSeconds > 0)
+                    <p class="mt-3 text-indigo-100 text-lg font-medium flex items-center justify-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        Tiempo límite: {{ $seriesTimeLimitSeconds / 60 }} minutos
+                    </p>
+                    @endif
+                </div>
+
+                <div class="px-4 py-8 sm:p-12 bg-gray-50 text-center sm:text-left">
+                    <div class="prose prose-indigo text-gray-700 mx-auto leading-relaxed text-justify">
+                        {!! nl2br(e($seriesInstructions)) !!}
+                    </div>
+
+                    <div class="mt-10 flex justify-center">
+                        <button wire:click="startSeries"
+                                class="inline-flex items-center px-8 py-4 border border-transparent text-lg font-bold rounded-full text-white bg-indigo-600 hover:bg-indigo-700 shadow-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            Comenzar Sección
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     @else
         {{-- ======================================================== --}}
-        {{-- PANTALLA 2: EL EXAMEN ACTUAL (Tu diseño original)        --}}
+        {{-- PANTALLA 2: EL EXAMEN ACTUAL                             --}}
         {{-- ======================================================== --}}
-        <div class="max-w-7xl mx-auto py-12 px-4 sm:px-4 lg:px-4">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6">
 
             {{-- HEADER: Barra de progreso + Botones --}}
-            <div class="mb-8">
-                <div class="flex justify-between items-center text-sm font-medium text-gray-500 mb-2">
-                    <div class="flex items-center gap-3">
-                        <span>Pregunta {{ $currentQuestionIndex + 1 }} de {{ $totalQuestions }}</span>
-                        {{-- TIMER --}}
-                        <span class="inline-flex items-center gap-1 bg-gray-100 text-gray-700 px-3 py-1 rounded-full font-mono text-xs font-semibold">
-                            <svg class="w-3.5 h-3.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="mb-6">
+                {{-- Fila superior: info izquierda + controles derecha --}}
+                <div class="flex flex-wrap justify-between items-center gap-y-2 text-sm font-medium text-gray-500 mb-2">
+
+                    {{-- Izquierda: pregunta actual + timers --}}
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-gray-700 font-semibold whitespace-nowrap">
+                            Pregunta {{ $currentQuestionIndex + 1 }} de {{ $totalQuestions }}
+                        </span>
+
+                        {{-- Timer total transcurrido --}}
+                        <span class="inline-flex items-center gap-1 bg-gray-100 text-gray-700 px-3 py-1 rounded-full font-mono text-xs font-semibold whitespace-nowrap">
+                            <svg class="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
                             <span x-text="formatTime(elapsedSeconds)">00:00</span>
                         </span>
+
+                        {{-- Timer de serie (solo cuando la serie tiene límite de tiempo) --}}
+                        @if($timeRemainingForSeries !== null)
+                        <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full font-mono text-xs font-bold whitespace-nowrap"
+                              :class="seriesTimeRemaining <= 30 ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-amber-100 text-amber-700'">
+                            <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Serie:&nbsp;<span x-text="formatTime(seriesTimeRemaining)">00:00</span>
+                        </span>
+                        @endif
                     </div>
 
-                    <div class="flex items-center gap-2">
+                    {{-- Derecha: botones + porcentaje --}}
+                    <div class="flex items-center gap-2 flex-wrap">
                         {{-- BOTÓN GLOSARIO (solo Cleaver) --}}
                         @if($isCleaver)
                         <button @click="showGlosarioModal = true" type="button"
                                 style="color: #d97706; background-color: #fffbeb;"
-                                class="inline-flex items-center hover:opacity-80 px-3 py-1 rounded-full transition-opacity">
+                                class="inline-flex items-center hover:opacity-80 px-3 py-1 rounded-full transition-opacity text-xs font-semibold">
                             <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
                             Glosario
                         </button>
                         @endif
 
-                        {{-- BOTÓN FLOTANTE DE AYUDA (?) --}}
-                        <button @click="showHelpModal = true" type="button" class="inline-flex items-center text-indigo-600 hover:text-indigo-800 focus:outline-none bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-full transition-colors">
+                        {{-- BOTÓN INSTRUCCIONES --}}
+                        <button @click="showHelpModal = true" type="button"
+                                class="inline-flex items-center text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-full transition-colors text-xs font-semibold">
                             <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            Ver Instrucciones
+                            Instrucciones
                         </button>
 
-                        <span class="font-bold text-gray-700">{{ round((($currentQuestionIndex) / $totalQuestions) * 100) }}%</span>
+                        <span class="font-bold text-gray-700 text-xs whitespace-nowrap">
+                            {{ round((($currentQuestionIndex) / $totalQuestions) * 100) }}%
+                        </span>
                     </div>
                 </div>
 
                 {{-- Barra de Progreso --}}
-                <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                    <div class="bg-indigo-600 h-2.5 rounded-full transition-all duration-500 ease-out"
+                <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                    <div class="bg-indigo-600 h-2 rounded-full transition-all duration-500 ease-out"
                          style="width: {{ (($currentQuestionIndex) / $totalQuestions) * 100 }}%"></div>
                 </div>
             </div>

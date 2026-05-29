@@ -28,6 +28,8 @@ use Filament\Forms\Components\Component;
 
 class ControlPanel extends Page implements HasForms
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     use InteractsWithForms;
     public ?array $data = [];
     public ?array $progresses = [
@@ -78,9 +80,7 @@ class ControlPanel extends Page implements HasForms
     }
     public static function shouldRegisterNavigation(): bool
     {
-        // Esto controla la visibilidad en la navegación.
-            return static::canView();
-
+        return false;
     }
 
     protected function getForms(): array

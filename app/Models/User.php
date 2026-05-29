@@ -48,33 +48,8 @@ class User extends Authenticatable implements FilamentUser
         'password',
         'scholarship',
         'career',
+        'razon_social_id',
         'sede_id',
-        'contract_type',
-        'entry_date',
-        'position_id',
-        'mi',
-        'department_id',
-        'address',
-        'city',
-        'state',
-        'cp',
-        'country',
-        'profile_photo',
-        'colony',
-        'status',
-        'rfc',
-        'emergency_name',
-        'emergency_phone',
-        'relationship_contact',
-        'employee_code',
-        'employee_number',
-        'imss',
-        'marital_status',
-        'staff_type',
-        'work_shift',
-        'rotates_shifts',
-        'time_in_position',
-        'experience_years'
     ];
 
     /**
@@ -109,8 +84,13 @@ class User extends Authenticatable implements FilamentUser
     {
         return $this->belongsTo(Department::class);
     }
-    public function portfolio (): hasOne{
-        return $this->hasOne(Portfolio::class);
+    public function portfolio()
+    {
+        return $this->hasOne(Portfolio::class, 'user_id');
+    }
+    public function razonSocial(): BelongsTo
+    {
+        return $this->belongsTo(RazonSocial::class, 'razon_social_id');
     }
     public function psychometry(): hasMany{
     return $this->hasMany(Psychometry::class);

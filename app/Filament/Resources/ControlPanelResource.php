@@ -15,6 +15,8 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class ControlPanelResource extends Resource
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $model = ControlPanel::class;
     protected static ?string $navigationGroup = 'Configuraciones';
     protected static ?string $navigationLabel = 'Panel de Control';

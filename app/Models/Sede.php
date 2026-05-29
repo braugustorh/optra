@@ -41,6 +41,11 @@ class Sede extends Model
         return $this->belongsToMany(Campaign::class, 'campaign_sede');
     }
 
+    public function razonSocials()
+    {
+        return $this->belongsToMany(RazonSocial::class, 'razon_social_sede');
+    }
+
     public function count_positions($sede)
     {
         return User::where('sede_id', $sede)

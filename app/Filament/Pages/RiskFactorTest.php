@@ -133,6 +133,8 @@ class RiskFactorTest extends Page
         return $activeSurvey !== null;
     }
 
+
+
     public static function shouldRegisterNavigation(): bool
     {
         return static::canView();

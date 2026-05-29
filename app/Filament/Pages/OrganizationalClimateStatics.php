@@ -22,6 +22,8 @@ use pxlrbt\FilamentExcel\Actions\Tables\ExportBulkAction;
 
 class OrganizationalClimateStatics extends Page implements HasTable
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     use InteractsWithTable;
     protected static ?string $navigationIcon = 'heroicon-m-chart-pie';
     protected static ?string $navigationLabel = 'Análisis de Clima Organizacional';
@@ -315,8 +317,7 @@ class OrganizationalClimateStatics extends Page implements HasTable
     }
     public static function shouldRegisterNavigation(): bool
     {
-        // Esto controla la visibilidad en la navegación.
-        return static::canView();
+        return false;
     }
     /**
      * Construye el dataset para la gráfica por rangos de edad.

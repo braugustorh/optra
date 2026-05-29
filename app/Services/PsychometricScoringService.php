@@ -9,7 +9,7 @@ class PsychometricScoringService
 {
     public function calculate(PsychometricEvaluation $evaluation)
     {
-        // Asumiendo IDs: 10=Moss, 11=Cleaver, 12=Kostick, 13=MostWess
+        // 9=MossWess, 10=Moss, 11=Cleaver, 12=Kostick, 13=Terman-Merril
         switch ($evaluation->evaluations_type_id) {
             case 10:
                 return $this->calculateMoss($evaluation);
@@ -17,8 +17,10 @@ class PsychometricScoringService
                 return $this->calculateCleaver($evaluation);
             case 12:
                 return $this->calculateKostick($evaluation);
-            case 9: // <--- NUEVO CASO AGREGADO
+            case 9:
                 return $this->calculateMossWess($evaluation);
+            case 13:
+                return $this->calculateTerman($evaluation);
             default:
                 return ['error' => 'Tipo de evaluación no soportado. ID: ' . $evaluation->evaluations_type_id];
         }
@@ -1053,5 +1055,198 @@ class PsychometricScoringService
         }
 
         return $result;
+    }
+
+    // =========================================================================
+    // TERMAN-MERRIL — Medición de Inteligencia (CI)
+    // IDs de competencias: 56=Serie I … 65=Serie X
+    // =========================================================================
+    private function calculateTerman(PsychometricEvaluation $evaluation): array
+    {
+        // ─── TABLAS DE BAREMOS ───────────────────────────────────────────────
+
+        // Convierte puntaje bruto → puntaje de CI
+        $equivalencias = [
+            67 => 80,  68 => 80,  69 => 80,  70 => 81,  71 => 81,  72 => 82,  73 => 82,  74 => 82,
+            75 => 83,  76 => 83,  77 => 84,  78 => 84,  79 => 84,  80 => 84,  81 => 85,  82 => 85,
+            83 => 86,  84 => 86,  85 => 86,  86 => 87,  87 => 88,  88 => 88,  89 => 88,  90 => 88,
+            91 => 89,  92 => 89,  93 => 89,  94 => 90,  95 => 90,  96 => 90,  97 => 91,  98 => 91,
+            99 => 91, 100 => 92, 101 => 92, 102 => 92, 103 => 93, 104 => 93, 105 => 94, 106 => 94,
+           107 => 95, 108 => 95, 109 => 95, 110 => 95, 111 => 96, 112 => 96, 113 => 96, 114 => 96,
+           115 => 97, 116 => 97, 117 => 98, 118 => 98, 119 => 98, 120 => 99, 121 => 99, 122 => 99,
+           123 => 99, 124 => 100, 125 => 100, 126 => 101, 127 => 101, 128 => 101, 129 => 101,
+           130 => 102, 131 => 102, 132 => 102, 133 => 102, 134 => 103, 135 => 103, 136 => 103,
+           137 => 103, 138 => 104, 139 => 104, 140 => 104, 141 => 104, 142 => 105, 143 => 105,
+           144 => 105, 145 => 105, 146 => 106, 147 => 106, 148 => 106, 149 => 106, 150 => 107,
+           151 => 107, 152 => 107, 153 => 107, 154 => 108, 155 => 108, 156 => 108, 157 => 108,
+           158 => 109, 159 => 109, 160 => 110, 161 => 110, 162 => 110, 163 => 111, 164 => 111,
+           165 => 111, 166 => 111, 167 => 112, 168 => 113, 169 => 113, 170 => 113, 171 => 114,
+           172 => 114, 173 => 114, 174 => 115, 175 => 115, 176 => 116, 177 => 116, 178 => 117,
+           179 => 117, 180 => 117, 181 => 118, 182 => 118, 183 => 118, 184 => 119, 185 => 119,
+           186 => 120, 187 => 121, 188 => 122, 189 => 123, 190 => 124, 191 => 125, 192 => 126,
+           193 => 127, 194 => 128, 195 => 129, 196 => 130, 197 => 131, 198 => 132, 199 => 133,
+           200 => 134, 201 => 135, 202 => 136, 203 => 137, 204 => 138, 205 => 139, 206 => 140,
+           207 => 141,
+        ];
+
+        // Rangos de CI → clasificación intelectual
+        $rangos_ci = [
+            ['min' => 140, 'max' => 999, 'clasificacion' => 'Sobresaliente'],
+            ['min' => 120, 'max' => 139, 'clasificacion' => 'Superior'],
+            ['min' => 110, 'max' => 119, 'clasificacion' => 'Término Medio Alto'],
+            ['min' => 90,  'max' => 109, 'clasificacion' => 'Normal'],
+            ['min' => 80,  'max' => 89,  'clasificacion' => 'Término Medio Bajo'],
+            ['min' => 70,  'max' => 79,  'clasificacion' => 'Inferior'],
+            ['min' => 0,   'max' => 69,  'clasificacion' => 'Deficiente'],
+        ];
+
+        // Rangos puntaje bruto → capacidad de aprendizaje
+        $rangos_capacidad = [
+            ['min' => 172, 'max' => 186, 'clasificacion' => 'Sobresaliente'],
+            ['min' => 151, 'max' => 171, 'clasificacion' => 'Superior'],
+            ['min' => 137, 'max' => 150, 'clasificacion' => 'Término Medio Alto'],
+            ['min' => 123, 'max' => 136, 'clasificacion' => 'Normal'],
+            ['min' => 102, 'max' => 122, 'clasificacion' => 'Término Medio Bajo'],
+            ['min' => 95,  'max' => 101, 'clasificacion' => 'Inferior'],
+            ['min' => 67,  'max' => 94,  'clasificacion' => 'Deficiente'],
+        ];
+
+        // Rangos por serie (clave = número de serie 1-10, valor = baremos por nivel)
+        $rangos_por_serie = [
+            1  => ['Sobresaliente' => ['min' => 16, 'max' => 16], 'Superior' => ['min' => 15, 'max' => 15], 'Término Medio Alto' => ['min' => 14, 'max' => 14], 'Normal' => ['min' => 12, 'max' => 13], 'Término Medio Bajo' => ['min' => 10, 'max' => 11], 'Inferior' => ['min' => 8,  'max' => 9],  'Deficiente' => ['min' => 0, 'max' => 7]],
+            2  => ['Sobresaliente' => ['min' => 22, 'max' => 22], 'Superior' => ['min' => 20, 'max' => 20], 'Término Medio Alto' => ['min' => 18, 'max' => 18], 'Normal' => ['min' => 12, 'max' => 16], 'Término Medio Bajo' => ['min' => 10, 'max' => 10], 'Inferior' => ['min' => 8,  'max' => 8],  'Deficiente' => ['min' => 0, 'max' => 6]],
+            3  => ['Sobresaliente' => ['min' => 29, 'max' => 30], 'Superior' => ['min' => 27, 'max' => 28], 'Término Medio Alto' => ['min' => 23, 'max' => 26], 'Normal' => ['min' => 14, 'max' => 22], 'Término Medio Bajo' => ['min' => 12, 'max' => 13], 'Inferior' => ['min' => 8,  'max' => 11], 'Deficiente' => ['min' => 0, 'max' => 7]],
+            4  => ['Sobresaliente' => ['min' => 18, 'max' => 18], 'Superior' => ['min' => 16, 'max' => 17], 'Término Medio Alto' => ['min' => 14, 'max' => 15], 'Normal' => ['min' => 10, 'max' => 13], 'Término Medio Bajo' => ['min' => 7,  'max' => 9],  'Inferior' => ['min' => 6,  'max' => 6],  'Deficiente' => ['min' => 0, 'max' => 5]],
+            5  => ['Sobresaliente' => ['min' => 24, 'max' => 24], 'Superior' => ['min' => 20, 'max' => 22], 'Término Medio Alto' => ['min' => 16, 'max' => 18], 'Normal' => ['min' => 12, 'max' => 14], 'Término Medio Bajo' => ['min' => 8,  'max' => 10], 'Inferior' => ['min' => 6,  'max' => 6],  'Deficiente' => ['min' => 0, 'max' => 4]],
+            6  => ['Sobresaliente' => ['min' => 20, 'max' => 20], 'Superior' => ['min' => 18, 'max' => 19], 'Término Medio Alto' => ['min' => 15, 'max' => 17], 'Normal' => ['min' => 9,  'max' => 14], 'Término Medio Bajo' => ['min' => 7,  'max' => 8],  'Inferior' => ['min' => 5,  'max' => 6],  'Deficiente' => ['min' => 0, 'max' => 4]],
+            7  => ['Sobresaliente' => ['min' => 19, 'max' => 20], 'Superior' => ['min' => 18, 'max' => 18], 'Término Medio Alto' => ['min' => 16, 'max' => 17], 'Normal' => ['min' => 9,  'max' => 15], 'Término Medio Bajo' => ['min' => 6,  'max' => 8],  'Inferior' => ['min' => 5,  'max' => 5],  'Deficiente' => ['min' => 0, 'max' => 4]],
+            8  => ['Sobresaliente' => ['min' => 17, 'max' => 17], 'Superior' => ['min' => 15, 'max' => 16], 'Término Medio Alto' => ['min' => 13, 'max' => 14], 'Normal' => ['min' => 8,  'max' => 12], 'Término Medio Bajo' => ['min' => 7,  'max' => 7],  'Inferior' => ['min' => 6,  'max' => 6],  'Deficiente' => ['min' => 0, 'max' => 5]],
+            9  => ['Sobresaliente' => ['min' => 18, 'max' => 18], 'Superior' => ['min' => 17, 'max' => 17], 'Término Medio Alto' => ['min' => 16, 'max' => 16], 'Normal' => ['min' => 10, 'max' => 15], 'Término Medio Bajo' => ['min' => 9,  'max' => 9],  'Inferior' => ['min' => 7,  'max' => 8],  'Deficiente' => ['min' => 0, 'max' => 6]],
+            10 => ['Sobresaliente' => ['min' => 20, 'max' => 22], 'Superior' => ['min' => 18, 'max' => 18], 'Término Medio Alto' => ['min' => 16, 'max' => 16], 'Normal' => ['min' => 10, 'max' => 14], 'Término Medio Bajo' => ['min' => 8,  'max' => 8],  'Inferior' => ['min' => 6,  'max' => 6],  'Deficiente' => ['min' => 0, 'max' => 4]],
+        ];
+
+        // Mapa competence_id → número de serie (56=I … 65=X)
+        $competenceToSerie = [
+            56 => 1, 57 => 2, 58 => 3, 59 => 4, 60 => 5,
+            61 => 6, 62 => 7, 63 => 8, 64 => 9, 65 => 10,
+        ];
+
+        // Nombres descriptivos de cada serie
+        $serieNombres = [
+            1  => 'Serie I — Información',
+            2  => 'Serie II — Juicio',
+            3  => 'Serie III — Vocabulario',
+            4  => 'Serie IV — Síntesis',
+            5  => 'Serie V — Concentración',
+            6  => 'Serie VI — Análisis',
+            7  => 'Serie VII — Abstracción',
+            8  => 'Serie VIII — Planeación',
+            9  => 'Serie IX — Organización',
+            10 => 'Serie X — Atención',
+        ];
+
+        // ─── PASO 1: OBTENER RESPUESTAS DEL CANDIDATO ────────────────────────
+        // Unimos las respuestas del usuario con:
+        //   - answers   → is_correct y weight
+        //   - questions → competence_id para saber a qué serie pertenece
+        $userAnswers = EvaluationUserAnswer::where('psychometric_evaluation_id', $evaluation->id)
+            ->whereNotNull('answer_id')
+            ->join('answers', 'evaluation_user_answers.answer_id', '=', 'answers.id')
+            ->join('questions', 'evaluation_user_answers.question_id', '=', 'questions.id')
+            ->select(
+                'questions.competence_id',
+                'answers.is_correct',
+                'answers.weight'
+            )
+            ->get();
+
+        // ─── PASO 2: ACUMULAR PUNTAJES POR SERIE ─────────────────────────────
+        $porSerie = [];
+        foreach ($competenceToSerie as $compId => $serieNum) {
+            $porSerie[$serieNum] = 0;
+        }
+
+        $puntajeBruto = 0;
+
+        foreach ($userAnswers as $row) {
+            if (! $row->is_correct) {
+                continue;
+            }
+            $peso     = (float) ($row->weight ?? 1);
+            $serieNum = $competenceToSerie[$row->competence_id] ?? null;
+            if ($serieNum === null) {
+                continue;
+            }
+            $porSerie[$serieNum] += $peso;
+            $puntajeBruto        += $peso;
+        }
+
+        // Redondear a enteros (los pesos son 1 o 2)
+        $puntajeBruto = (int) round($puntajeBruto);
+        foreach ($porSerie as $k => $v) {
+            $porSerie[$k] = (int) round($v);
+        }
+
+        // ─── PASO 3: CALCULAR CI desde tabla de equivalencias ─────────────────
+        $ciScore = null;
+        if (isset($equivalencias[$puntajeBruto])) {
+            $ciScore = $equivalencias[$puntajeBruto];
+        } elseif ($puntajeBruto < min(array_keys($equivalencias))) {
+            $ciScore = min(array_values($equivalencias)); // límite inferior → 80
+        } elseif ($puntajeBruto > max(array_keys($equivalencias))) {
+            $ciScore = max(array_values($equivalencias)); // límite superior → 141
+        }
+
+        // ─── PASO 4: CLASIFICACIÓN CI ─────────────────────────────────────────
+        $clasificacionCI = 'Sin clasificación';
+        if ($ciScore !== null) {
+            foreach ($rangos_ci as $rango) {
+                if ($ciScore >= $rango['min'] && $ciScore <= $rango['max']) {
+                    $clasificacionCI = $rango['clasificacion'];
+                    break;
+                }
+            }
+        }
+
+        // ─── PASO 5: CLASIFICACIÓN CAPACIDAD DE APRENDIZAJE ──────────────────
+        $clasificacionCapacidad = 'Sin clasificación';
+        foreach ($rangos_capacidad as $rango) {
+            if ($puntajeBruto >= $rango['min'] && $puntajeBruto <= $rango['max']) {
+                $clasificacionCapacidad = $rango['clasificacion'];
+                break;
+            }
+        }
+
+        // ─── PASO 6: CLASIFICACIÓN POR SERIE ─────────────────────────────────
+        $seriesResultados = [];
+        foreach ($porSerie as $serieNum => $puntajeSerie) {
+            $clasificacionSerie = 'Sin clasificación';
+            if (isset($rangos_por_serie[$serieNum])) {
+                foreach ($rangos_por_serie[$serieNum] as $nivel => $rango) {
+                    if ($puntajeSerie >= $rango['min'] && $puntajeSerie <= $rango['max']) {
+                        $clasificacionSerie = $nivel;
+                        break;
+                    }
+                }
+            }
+            $seriesResultados[$serieNum] = [
+                'nombre'        => $serieNombres[$serieNum] ?? "Serie {$serieNum}",
+                'puntaje'       => $puntajeSerie,
+                'clasificacion' => $clasificacionSerie,
+            ];
+        }
+
+        ksort($seriesResultados);
+
+        // ─── PASO 7: RETORNO ──────────────────────────────────────────────────
+        return [
+            'test_name'               => 'Terman-Merril (CI)',
+            'puntaje_bruto'           => $puntajeBruto,
+            'ci_score'                => $ciScore,
+            'clasificacion_ci'        => $clasificacionCI,
+            'clasificacion_capacidad' => $clasificacionCapacidad,
+            'series'                  => $seriesResultados,
+            'resumen'                 => "Puntaje bruto: {$puntajeBruto} | CI: {$ciScore} | Clasificación: {$clasificacionCI} | Capacidad de aprendizaje: {$clasificacionCapacidad}",
+        ];
     }
 }

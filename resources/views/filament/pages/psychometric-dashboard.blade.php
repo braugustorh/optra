@@ -171,10 +171,11 @@
                         </x-filament::button>
 
                         <x-filament::button
-                            color="gray"
+                            color="warning"
                             size="sm"
-                            class="w-full justify-start">
-                            📈 Generar Reporte
+                            class="w-full justify-start"
+                            wire:click="mountAction('generate_report')">
+                            📈 Generar Reporte General
                         </x-filament::button>
                     </div>
                 </x-filament::section>

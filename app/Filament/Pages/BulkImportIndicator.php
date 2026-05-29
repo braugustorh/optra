@@ -17,6 +17,8 @@ use Filament\Notifications\Notification;
 
 class BulkImportIndicator extends Page
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $navigationIcon = 'heroicon-m-arrow-up-on-square';
     protected static ?string $navigationLabel = 'Importación de Indicadores';
     protected static ?string $navigationGroup = 'Tablero de Control';
@@ -41,8 +43,7 @@ class BulkImportIndicator extends Page
     }
     public static function shouldRegisterNavigation(): bool
     {
-        // Esto controla la visibilidad en la navegación.
-        return static::canView();
+        return false;
     }
 
     protected function getForms(): array

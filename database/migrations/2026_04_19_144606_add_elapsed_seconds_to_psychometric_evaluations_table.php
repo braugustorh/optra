@@ -12,17 +12,14 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('psychometric_evaluations', function (Blueprint $table) {
-            //
+            $table->unsignedInteger('elapsed_seconds')->default(0)->after('status');
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('psychometric_evaluations', function (Blueprint $table) {
-            //
+            $table->dropColumn('elapsed_seconds');
         });
     }
 };

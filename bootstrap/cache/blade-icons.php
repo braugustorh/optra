@@ -1,7 +1,7 @@
 <?php return array (
   'heroicons' => 
   array (
-    'C:\\xampp\\htdocs\\adc\\vendor\\blade-ui-kit\\blade-heroicons\\src/../resources/svg' => 
+    'C:\\xampp\\htdocs\\sedyco\\vendor\\blade-ui-kit\\blade-heroicons\\src/../resources/svg' => 
     array (
       0 => 'c-academic-cap',
       1 => 'c-adjustments-horizontal',
@@ -1295,7 +1295,7 @@
   ),
   'google-material-design-icons' => 
   array (
-    'C:\\xampp\\htdocs\\adc\\vendor\\codeat3\\blade-google-material-design-icons\\src/../resources/svg' => 
+    'C:\\xampp\\htdocs\\sedyco\\vendor\\codeat3\\blade-google-material-design-icons\\src/../resources/svg' => 
     array (
       0 => '10k-o',
       1 => '10k-r',
@@ -12052,7 +12052,7 @@
   ),
   'iconpark' => 
   array (
-    'C:\\xampp\\htdocs\\adc\\vendor\\codeat3\\blade-iconpark\\src/../resources/svg' => 
+    'C:\\xampp\\htdocs\\sedyco\\vendor\\codeat3\\blade-iconpark\\src/../resources/svg' => 
     array (
       0 => 'abdominal-o',
       1 => 'abdominal',
@@ -16932,7 +16932,7 @@
   ),
   'solar-icons' => 
   array (
-    'C:\\xampp\\htdocs\\adc\\vendor\\codeat3\\blade-solar-icons\\src/../resources/svg' => 
+    'C:\\xampp\\htdocs\\sedyco\\vendor\\codeat3\\blade-solar-icons\\src/../resources/svg' => 
     array (
       0 => '4k-bold-duotone',
       1 => '4k-bold',
@@ -24342,7 +24342,7 @@
   ),
   'teeny-icons' => 
   array (
-    'C:\\xampp\\htdocs\\adc\\vendor\\codeat3\\blade-teeny-icons\\src/../resources/svg' => 
+    'C:\\xampp\\htdocs\\sedyco\\vendor\\codeat3\\blade-teeny-icons\\src/../resources/svg' => 
     array (
       0 => '360-o',
       1 => '360',
@@ -25548,7 +25548,7 @@
   ),
   'fontawesome-brands' => 
   array (
-    'C:\\xampp\\htdocs\\adc\\vendor\\owenvoke\\blade-fontawesome\\src/../resources/svg/brands' => 
+    'C:\\xampp\\htdocs\\sedyco\\vendor\\owenvoke\\blade-fontawesome\\src/../resources/svg/brands' => 
     array (
       0 => '42-group',
       1 => '500px',
@@ -26083,7 +26083,7 @@
   ),
   'fontawesome-regular' => 
   array (
-    'C:\\xampp\\htdocs\\adc\\vendor\\owenvoke\\blade-fontawesome\\src/../resources/svg/regular' => 
+    'C:\\xampp\\htdocs\\sedyco\\vendor\\owenvoke\\blade-fontawesome\\src/../resources/svg/regular' => 
     array (
       0 => 'address-book',
       1 => 'address-card',
@@ -26325,7 +26325,7 @@
   ),
   'fontawesome-solid' => 
   array (
-    'C:\\xampp\\htdocs\\adc\\vendor\\owenvoke\\blade-fontawesome\\src/../resources/svg/solid' => 
+    'C:\\xampp\\htdocs\\sedyco\\vendor\\owenvoke\\blade-fontawesome\\src/../resources/svg/solid' => 
     array (
       0 => '0',
       1 => '1',
@@ -28089,7 +28089,7 @@
   ),
   'blade-mdi' => 
   array (
-    'C:\\xampp\\htdocs\\adc\\vendor\\postare\\blade-mdi\\src/../resources/svg' => 
+    'C:\\xampp\\htdocs\\sedyco\\vendor\\postare\\blade-mdi\\src/../resources/svg' => 
     array (
       0 => 'ab-testing',
       1 => 'abacus',

@@ -1,5 +1,17 @@
 
 <x-filament-panels::page>
+    @if(auth()->user()->hasRole('RH Corp') && $selected_sede_id)
+        <div class="mb-4">
+            <x-filament::button
+                wire:click="clearSelectedSede"
+                color="gray"
+                icon="heroicon-o-arrow-left"
+                size="sm"
+            >
+                Regresar al Monitor Global
+            </x-filament::button>
+        </div>
+    @endif
 @push('style')
     <style>
         .card {
@@ -94,6 +106,110 @@
         </div>
     @endif
 
+
+            @if($stage === 'monitor')
+            <div class="space-y-6">
+                <!-- Encabezado Estandarizado -->
+                <div class="mb-8 border-b border-gray-100 dark:border-white/10 pb-5">
+                    <h1 class="text-2xl font-bold tracking-tight text-gray-950 dark:text-white">
+                        Monitor de Sedes - NOM-035
+                    </h1>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                        Panel corporativo para el seguimiento de cumplimiento por centro de trabajo.
+                    </p>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+                    @foreach($sedes_monitor as $sede)
+                        @php
+                            $statusHex = match($sede['status']) {
+                                'finalizado' => '#10b981',
+                                'Sin activar' => '#9ca3af',
+                                default => '#f59e0b',
+                            };
+                        @endphp
+
+                        <div x-data="{ open: false }"
+                             class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-sm transition-all hover:shadow-md"
+                             style="border-left: 5px solid {{ $statusHex }};">
+
+                            <!-- Fila Principal con Alineación Centrada -->
+                            <div style="display: flex; align-items: center; padding: 1.5rem; gap: 2rem; flex-wrap: nowrap;">
+
+                                <!-- 1. Identificador de Sede (Estandarizado) -->
+                                <div style="flex: 0 0 240px;">
+                                    <h3 class="text-lg font-extrabold text-gray-950 dark:text-white uppercase tracking-tight leading-none">
+                                        {{ $sede['name'] }}
+                                    </h3>
+                                    <!-- Forzamos Uppercase y tamaño fijo para evitar el error de la captura -->
+                                    <div style="display: flex; align-items: center; gap: 4px; margin-top: 6px;">
+                                        <x-filament::icon icon="heroicon-m-map-pin" class="w-3.5 h-3.5 text-gray-400" />
+                                        <span style="font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; line-height: 1;">
+                                    {{ Str::upper($sede['location'] ?? 'UBICACIÓN NO DEFINIDA') }}
+                                </span>
+                                    </div>
+                                </div>
+
+                                <!-- 2. Sección de Métricas (Simétrica) -->
+                                <div style="flex: 1; padding: 0 2rem; border-left: 1px solid rgba(0,0,0,0.05); border-right: 1px solid rgba(0,0,0,0.05);">
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
+                                        <div style="display: flex; gap: 1.5rem; font-size: 11px; font-weight: 600; color: #4b5563;" class="dark:text-gray-400">
+                                            <span>COLAB: <b class="text-gray-950 dark:text-white text-xs">{{ $sede['total_colabs'] }}</b></span>
+                                            <span>RESP: <b class="text-gray-950 dark:text-white text-xs">{{ $sede['responses'] }} ({{ $sede['progress'] }}%)</b></span>
+                                        </div>
+                                        <span style="font-size: 10px; font-weight: 700; color: #9ca3af; text-transform: uppercase;">LÍMITE: --/--/--</span>
+                                    </div>
+
+                                    <!-- Barra de progreso con color de acento -->
+                                    <div style="width: 100%; background: #f3f4f6; height: 8px; border-radius: 99px; overflow: hidden;" class="dark:bg-gray-800">
+                                        <div style="width: {{ $sede['progress'] }}%; background: {{ $statusHex }}; height: 100%; border-radius: 99px; transition: width 1s ease-in-out;"></div>
+                                    </div>
+
+                                    <button @click="open = !open"
+                                            class="mt-3 flex items-center gap-1.5 text-[10px] font-bold text-gray-500 uppercase hover:text-primary-600 transition-colors">
+                                        <x-filament::icon icon="heroicon-m-chevron-down" class="w-3.5 h-3.5 transition-transform" ::class="open ? 'rotate-180' : ''" />
+                                        Razones Sociales ({{ count($sede['razones_sociales'] ?? []) }})
+                                    </button>
+                                </div>
+
+                                <!-- 3. Acciones (Botones Limpios) -->
+                                <div style="flex: 0 0 200px; display: flex; align-items: center; justify-content: flex-end; gap: 1rem;">
+                                    <!-- Label de Estatus con diseño Outline para no saturar -->
+                                    <span style="font-size: 10px; font-weight: 800; padding: 4px 10px; border-radius: 6px; border: 1.5px solid {{ $statusHex }}44; color: {{ $statusHex }}; background: {{ $statusHex }}08; text-transform: uppercase; letter-spacing: 0.02em;">
+                                {{ $sede['status'] }}
+                            </span>
+
+                                    <x-filament::button
+                                        wire:click="selectSede({{ $sede['id'] }})"
+                                        size="sm"
+                                        color="primary"
+                                        class="font-bold uppercase tracking-wide"
+                                        style="padding-left: 1.5rem; padding-right: 1.5rem;"
+                                    >
+                                        Gestionar
+                                    </x-filament::button>
+                                </div>
+                            </div>
+
+                            <!-- Panel de Razones Sociales (Diseño Minimalista) -->
+                            <div x-show="open" x-collapse x-cloak
+                                 class="bg-gray-50 dark:bg-white/5 border-t border-gray-100 dark:border-white/5 p-5">
+                                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                                    @foreach($sede['razones_sociales'] ?? [] as $rs)
+                                        <span style="font-size: 10px; font-weight: 700; padding: 6px 12px; background: white; border: 1px solid #e5e7eb; border-radius: 8px; color: #4b5563; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" class="dark:bg-gray-800 dark:border-white/10 dark:text-gray-400">
+                                    {{ $rs }}
+                                </span>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+        </div>
+            @endif
+
+
+
+
     @if($stage==='panel')
         <div class="grid gap-2 grid-cols-1 sm:grid-cols-3 xl:grid-cols-3">
             <div class="sm:col-span-2">
@@ -106,7 +222,7 @@
                     </x-slot>
                     <div>
                         <p>
-                            Actualmente en tu centro de trabajo están registrados <span class="font-semibold">{{ $colabs->count() }}</span> colaboradores, por lo que
+                            Actualmente en tu centro de trabajo están registrados <span class="font-semibold">{{ count($colabs) }}</span> colaboradores, por lo que
                             deberás cumplir los siguientes puntos dentro de la plataforma:
                         </p>
                         @if($level===1)
@@ -375,7 +491,8 @@
 
                 </x-filament::section>
 
-                @if($level===2 || auth()->user()->sede_id===21 || auth()->user()->sede_id===23 || auth()->user()->sede_id===17)
+                @php $currentSedeId = $this->getCurrentSedeId(); @endphp
+                @if($level===2 || $currentSedeId===21 || $currentSedeId===23 || $currentSedeId===17)
                     <x-filament::section class="mb-4"
                                          collapsible
                                          collapsed >
@@ -479,7 +596,7 @@
                         Información
                     </x-slot>
                     <strong>Sede:</strong>{{$norma->sede->name ?? 'No definido'}} <br>
-                    <strong>Colaboradores:</strong> {{ $colabs->count() }} <br>
+                    <strong>Colaboradores:</strong> {{ count($colabs) }} <br>
                     <strong>Muestra:</strong> {{ $muestra??'NA' }} <br>
                     <strong>Inicio del proceso:</strong> {{$this->norma->start_date->format('d/m/y')}} <br>
                     <strong>Fecha límite:</strong> {{$this->norma->start_date->addDays(40)->format('d/m/Y')}} <br>
@@ -542,11 +659,11 @@
                     <div class="lg:pe-6 xl:pe-12 my-3">
                         <p class="text-3xl font-bold leading-10 text-blue-600">
                             @if($colabResponsesG1>0)
-                            {{$colabResponsesG1}} <span class="text-xs">de</span> {{$colabs->count()}}
+                            {{$colabResponsesG1}} <span class="text-xs">de</span> {{count($colabs)}}
                             @else
                                 <span class="text-xs">Aún no se registran respuestas</span>
                             @endif
-                            @if($colabResponsesG1>0 && ($colabResponsesG1 === $colabs->count()))
+                            @if($colabResponsesG1>0 && ($colabResponsesG1 === count($colabs)))
                             <span class="ms-1 inline-flex items-center gap-x-1 bg-gray-200-300 font-medium text-gray-800 text-xs leading-4 rounded-full py-0.5 px-2 dark:bg-neutral-800 dark:text-gray-500">
                             <svg class="shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#22c55e" viewBox="0 0 16 16">
                               <path d="M10.067.87a2.89 2.89 0 0 0-4.134 0l-.622.638-.89-.011a2.89 2.89 0 0 0-2.924 2.924l.01.89-.636.622a2.89 2.89 0 0 0 0 4.134l.637.622-.011.89a2.89 2.89 0 0 0 2.924 2.924l.89-.01.622.636a2.89 2.89 0 0 0 4.134 0l.622-.637.89.011a2.89 2.89 0 0 0 2.924-2.924l-.01-.89.636-.622a2.89 2.89 0 0 0 0-4.134l-.637-.622.011-.89a2.89 2.89 0 0 0-2.924-2.924l-.89.01-.622-.636zm.287 5.984-3 3a.5.5 0 0 1-.708 0l-1.5-1.5a.5.5 0 1 1 .708-.708L7 8.793l2.646-2.647a.5.5 0 0 1 .708.708z"/>
@@ -563,7 +680,7 @@
                     <!-- Stats -->
                     <div class="lg:pe-6 xl:pe-12 my-3 mt-3 my-3">
                         <p class="text-3xl font-bold leading-10 text-blue-600">
-                            @if($norma->identifiedCollaborators()->where('type_identification','encuesta')->where('norma_id',$norma->id)
+                            @if(isset($norma->id) && $norma->identifiedCollaborators()->where('type_identification','encuesta')->where('norma_id',$norma->id)
                                 ->count() > 0)
                                 {{$norma->identifiedCollaborators()->where('type_identification','encuesta')->where('norma_id',$norma->id)->count()}}
 
@@ -590,7 +707,7 @@
                         Perfil Sociodemográfico
                     </x-slot>
                     <p>
-                        Este apartado presenta un panorama general y agregada de la composición de los empleados de {{auth()->user()->sede->name}}, basada en los datos recolectados de manera voluntaria a
+                        Este apartado presenta un panorama general y agregada de la composición de los empleados de {{$current_sede_name}}, basada en los datos recolectados de manera voluntaria a
                         través de la <strong> Guía V de la NOM-035</strong> (como edad, género, nivel educativo, antigüedad, tipo de contrato, etc.).
                         No incluiría datos personales identificables para respetar la privacidad, sino resúmenes estadísticos y visuales que ayuden a entender la diversidad y estructura de la plantilla.
                     </p>
@@ -609,7 +726,8 @@
 
                 </x-filament::section>
 
-                @if($level==2 || $level==3 || auth()->user()->sede_id===21 || auth()->user()->sede_id===23 || auth()->user()->sede_id===17)
+                @php $currentSedeId = $this->getCurrentSedeId(); @endphp
+                @if($level==2 || $level==3 || $currentSedeId===21 || $currentSedeId===23 || $currentSedeId===17)
 
                 <x-filament::section class="mb-4">
                     <x-slot name="heading">
@@ -1000,7 +1118,7 @@
             <p>Puntos Obtenidos: <strong>{{number_format($calificacionG3,2)}}</strong></p>
             <p>Determinación: <strong>{{$resultCuestionarioG3}}</strong></p>
             <p>Tests Realizados: <strong>{{$totalResponsesG3}}</strong>
-            <p>Tests Restantes: <strong>{{$colabs->count() - $totalResponsesG3}}</strong></p>
+            <p>Tests Restantes: <strong>{{count($colabs) - $totalResponsesG3}}</strong></p>
         </div>
         <div class="overflow-x-auto">
             <x-slot name="heading">
@@ -1147,7 +1265,7 @@
             </x-slot>
             <div>
                 <p>
-                    Se han identificado <strong>{{$norma->identifiedCollaborators()->where('type_identification','encuesta')->count()??0}}</strong> colaboradores que han sido expuestos a eventos traumáticos severos.
+                    Se han identificado <strong>{{isset($norma->id)?($norma->identifiedCollaborators()->where('type_identification','encuesta')->count()??0):0}}</strong> colaboradores que han sido expuestos a eventos traumáticos severos.
                     Descarga el resumen y la canalización de los colaboradores identificados para su atención.
                 </p>
             </div>

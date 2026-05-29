@@ -21,6 +21,8 @@ use Illuminate\Support\Collection;
 
 class PsychometryResource extends Resource
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $model = Psychometry::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-puzzle-piece';
@@ -39,7 +41,7 @@ class PsychometryResource extends Resource
             'Administrador',
             'RH',
             'RH Corp',
-             'Visor',
+            'Visor',
         ]);
 
     }

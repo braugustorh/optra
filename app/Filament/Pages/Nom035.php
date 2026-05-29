@@ -19,6 +19,8 @@ use Filament\Pages\Page;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpWord\TemplateProcessor;
+use PhpOffice\PhpWord\Settings as PhpWordSettings;
+use PhpOffice\PhpWord\Shared\ZipArchive;
 use PhpOffice\PhpWord\Writer\PDF\DomPDF;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Response;
@@ -37,14 +39,16 @@ class Nom035 extends Page
     protected static ?int $navigationSort = 1;
 
     // Propiedades existentes
+    public $selected_sede_id = null;
+    public $sedes_monitor = [];
     public $stage = 'welcome';
-    public $colabs;
+    public $colabs = [];
     public $muestra;
     // Propiedades para el modal de identificación
     public $selectedCollaborator = null;
     public $identifiedColaborators = [];
-    public $colaborators;
-    public $availableColaborators;
+    public $colaborators = [];
+    public $availableColaborators = [];
     // Propiedades para el modal de identificación
     public $selectedEventType = null;
     public $eventDescription = '';
@@ -57,7 +61,7 @@ class Nom035 extends Page
     public $resultCuestionario;
     public Int $level = 0; //Nivel de encuesta depende de la cantidad de colaboradores
     public $activeGuideI = false, $activeGuideII = false, $activeGuideIII = false;
-    public $eventTypesByCategory;
+    public $eventTypesByCategory = [];
     public $muestraGuideIII = 0;
     public $responsesTotalG2;
     public $generalResults = [];
@@ -89,8 +93,7 @@ class Nom035 extends Page
 
     public static function canView(): bool
     {
-        return \auth()->user()->hasAnyRole(['Administrador','RH Corp','RH']);
-
+        return auth()->check() && auth()->user()->hasAnyRole(['Administrador', 'RH Corp']);
     }
     public static function shouldRegisterNavigation(): bool
     {
@@ -98,11 +101,73 @@ class Nom035 extends Page
         return static::canView();
 
     }
+    public function getCurrentSedeId()
+    {
+        if (auth()->check() && auth()->user()->hasRole('RH Corp')) {
+            return session('selected_sede_id');
+        }
+        $user = auth()->user();
+        return $user ? $user->getAttribute('sede_id') : null;
+    }
+
+    public function selectSede($id)
+    {
+        session(['selected_sede_id' => $id]);
+        return redirect()->to(request()->header('Referer'));
+    }
+
+    public function clearSelectedSede()
+    {
+        session()->forget('selected_sede_id');
+        return redirect()->to(request()->header('Referer'));
+    }
+
+    public function loadMonitorData()
+    {
+        $this->sedes_monitor = \App\Models\Sede::with('razonSocials')->get()->map(function($sede) {
+            $process = Nom035Process::where('sede_id', $sede->id)
+                ->orderBy('created_at', 'desc')
+                ->first();
+
+            // Cálculo básico de avance para el monitor
+            $totalColabs = User::where('sede_id', $sede->id)->where('status', true)->count();
+            $responses = 0;
+            if ($process) {
+                $responses = TraumaticEventSurvey::where('norma_id', $process->id)->distinct('user_id')->count();
+            }
+
+            return [
+                'id' => $sede->id,
+                'name' => $sede->name,
+                'location' => $sede->city . ($sede->state ? ', ' . $sede->state : ''),
+                'status' => $process ? $process->status : 'Sin activar',
+                'progress' => $totalColabs > 0 ? round(($responses / $totalColabs) * 100) : 0,
+                'total_colabs' => $totalColabs,
+                'responses' => $responses,
+                'razones_sociales' => $sede->razonSocials->pluck('name')->toArray(),
+            ];
+        })->toArray();
+    }
+
     // Inicializar datos
+    public $current_sede_name = '';
+
     public function mount()
     {
-        $this->norma=Nom035Process::findActiveProcess(auth()->user()->sede_id);
-        Log::info('Mounting NOM-035 page for user ID: ' . auth()->id() . ' with sede ID: ' . auth()->user()->sede_id);
+        $this->selected_sede_id = $this->getCurrentSedeId();
+
+        if (auth()->user()->hasRole('RH Corp') && !$this->selected_sede_id) {
+            $this->stage = 'monitor';
+            $this->loadMonitorData();
+            return;
+        }
+
+        $effectiveSedeId = $this->selected_sede_id ?? $this->getCurrentSedeId();
+        $currentSede = \App\Models\Sede::find($effectiveSedeId);
+        $this->current_sede_name = $currentSede ? $currentSede->name : 'No definido';
+
+        $this->norma=Nom035Process::findActiveProcess($effectiveSedeId);
+        Log::info('Mounting NOM-035 page for user ID: ' . auth()->id() . ' with effective sede ID: ' . $effectiveSedeId);
         Log::info($this->norma);
 
         // Cargar colaboradores de la sede actual
@@ -153,21 +218,21 @@ class Nom035 extends Page
             $this->norma=collect();
         }
 
-        $this->colabs =User::where('sede_id', auth()->user()->sede_id ?? null)
+        $this->colabs =User::where('sede_id', $this->getCurrentSedeId() ?? null)
             ->where('status', true)
             ->get();
         $this->colaborators = $this->colabs;
         $this->availableColaborators = $this->colaborators;
 
         // Calcular muestra según el número de colaboradores
-        if ($this->colabs->count() >= 51) {
-            $this->muestra = $this->calculateSampleSize($this->colabs->count());
+        if (count($this->colabs) >= 51) {
+            $this->muestra = $this->calculateSampleSize(count($this->colabs));
             $this->level=3; //Guía III
-        }else if ($this->colabs->count()>=16 && $this->colabs->count()<=50) {
-            $this->muestra =$this->colabs->count();
+        }else if (count($this->colabs)>=16 && count($this->colabs)<=50) {
+            $this->muestra =count($this->colabs);
             $this->level=2; //Guía II
         } else {
-            $this->muestra = $this->colabs->count();
+            $this->muestra = count($this->colabs);
             $this->level=1; //Guía I
         }
 
@@ -182,12 +247,12 @@ class Nom035 extends Page
     {
         // Simular carga
         $saveProcess= new Nom035Process();
-        $saveProcess->sede_id = auth()->user()->sede_id;
+        $saveProcess->sede_id = $this->getCurrentSedeId();
         $saveProcess->hr_manager_id = auth()->id();
         $saveProcess->start_date = now();
         $saveProcess->status = 'iniciado';
-        $saveProcess->total_employees = $this->colabs->count();
-        $saveProcess->survey_applicable = $this->colabs->count()>=16;
+        $saveProcess->total_employees = count($this->colabs);
+        $saveProcess->survey_applicable = count($this->colabs)>=16;
         $saveProcess->save();
         $this->norma = $saveProcess;
         // Notificación de éxito
@@ -230,7 +295,7 @@ class Nom035 extends Page
 
 
         $responses = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->get()
             ->groupBy('user_id')
             ->map(function ($items) {
@@ -251,7 +316,7 @@ class Nom035 extends Page
          */
 
         $ambientResponses = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [1, 2, 3]);
             })
@@ -262,7 +327,7 @@ class Nom035 extends Page
             });
         $this->coverAmbientResponses = $ambientResponses;
         $activityResponses = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 18, 19,20,21,22,26,27,42,43,44]);
             })
@@ -273,7 +338,7 @@ class Nom035 extends Page
             });
         $this->coverActivityResponses = $activityResponses;
         $timeResponses = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [14,15,16,17]);
             })
@@ -284,7 +349,7 @@ class Nom035 extends Page
             });
         $this->coverTimeResponses = $timeResponses;
         $leadershipResponses = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [23,24,25,28,29,30,31,32,33,34,35,36,37,38,39,40,46,47,48]);
             })
@@ -337,7 +402,7 @@ class Nom035 extends Page
          ******** SECCIÓN DE DOMINIO
          */
         $conditionResponses = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [1, 2, 3]);
             })
@@ -348,7 +413,7 @@ class Nom035 extends Page
             });
         $this->coverConditionResponses = $conditionResponses;
         $workActivityResponses = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [4, 5, 6, 7, 8, 9, 10, 11, 12, 13,42,43,44]);
             })
@@ -359,7 +424,7 @@ class Nom035 extends Page
             });
         $this->coverWorkActivityResponses = $workActivityResponses;
         $workControlResponses = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [20,21,22,18,19,26,27]);
             })
@@ -371,7 +436,7 @@ class Nom035 extends Page
         $this->coverWorkControlResponses = $workControlResponses;
 
         $workJourneyResponses = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [14,15]);
             })
@@ -383,7 +448,7 @@ class Nom035 extends Page
         $this->coverWorkJourneyResponses = $workJourneyResponses;
 
         $wordAndFamilyResponses = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [16,17]);
             })
@@ -394,7 +459,7 @@ class Nom035 extends Page
             });
         $this->coverWordAndFamilyResponses = $wordAndFamilyResponses;
         $leadershipResponses= RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [23,24,25,28,29]);
             })
@@ -405,7 +470,7 @@ class Nom035 extends Page
             });
         $this->coverDomainLeadershipResponses = $leadershipResponses;
         $workRelationsResponses = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [30,31,32,46,47,48]);
             })
@@ -416,7 +481,7 @@ class Nom035 extends Page
             });
         $this->coverWorkRelationsResponses = $workRelationsResponses;
         $violenceResponses = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [33,34,35,36,37,38,39,40]);
             })
@@ -523,25 +588,25 @@ class Nom035 extends Page
         // Ahora calculamos los resultados generales por categoría
         /*
         $this->generalResultsCategory['ambiente'] = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [1, 2, 3]);
             })
             ->sum('equivalence_response');
         $this->generalResultsCategory['actividad'] = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 18, 19,20,21,22,26,27,42,43,44]);
             })
             ->sum('equivalence_response');
         $this->generalResultsCategory['tiempo'] = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [14,15,16,17]);
             })
             ->sum('equivalence_response');
         $this->generalResultsCategory['liderazgo'] = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [23,24,25,28,29,30,31,32,33,34,35,36,37,38,39,40,46,47,48]);
             })
@@ -620,7 +685,7 @@ class Nom035 extends Page
         //Se trabaja con los resultados generales de la guía III
         $this->generalResultsGuideIII = [];
         $responses= RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->get()
             ->groupBy('user_id')
             ->map(function ($items) {
@@ -641,7 +706,7 @@ class Nom035 extends Page
          * Asignación de los resultados generales por categoría de la guía III
          */
         $ambienteQuery= RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [1, 2, 3,4,5]);
             })
@@ -652,7 +717,7 @@ class Nom035 extends Page
             });
         $this->coverAmbientResponses = $ambienteQuery;
         $actividadQuery= RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [6,7,8,9,10,11,12,13,14,15,16,23,24,25,26,27,28,29,30,35,36,66,67,68,69]);
             })
@@ -663,7 +728,7 @@ class Nom035 extends Page
             });
         $this->coverActivityResponses = $actividadQuery;
         $tiempoQuery= RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [17,18,19,20,21,22]);
             })
@@ -674,7 +739,7 @@ class Nom035 extends Page
             });
         $this->coverTimeResponses = $tiempoQuery;
         $liderazgoQuery= RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [31,32,33,34,37,38,39,40,41,42,43,44,45,46,57,58,59,60,61,62,63,64,71,72,73,74]);
             })
@@ -685,7 +750,7 @@ class Nom035 extends Page
             });
         $this->coverLeadershipResponses = $liderazgoQuery;
         $envirommentQuery= RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [47,48,49,50,51,52,53,54,55,56]);
             })
@@ -759,7 +824,7 @@ class Nom035 extends Page
 
         $this->generalDomainResultsGuideIII = [];
         $conditionResponses = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [1, 2, 3, 4, 5]);
             })
@@ -770,7 +835,7 @@ class Nom035 extends Page
             });
         $this->coverConditionResponses=$conditionResponses;
         $workActivityResponses = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 66, 67, 68, 69]);
             })
@@ -781,7 +846,7 @@ class Nom035 extends Page
             });
         $this->coverWorkActivityResponses=$workActivityResponses;
         $workControlResponses = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [23,24,25, 26, 27, 28, 29, 30,35,36]);
             })
@@ -792,7 +857,7 @@ class Nom035 extends Page
             });
         $this->coverWorkControlResponses=$workControlResponses;
         $workJourneyResponses = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [17, 18]);
             })
@@ -803,7 +868,7 @@ class Nom035 extends Page
             });
         $this->coverWorkJourneyResponses=$workJourneyResponses;
         $wordAndFamilyResponses = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [19, 20, 21, 22]);
             })
@@ -814,7 +879,7 @@ class Nom035 extends Page
             });
         $this->coverWordAndFamilyResponses=$wordAndFamilyResponses;
         $leadershipResponses= RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [31, 32, 33, 34, 37, 38, 39, 40, 41]);
             })
@@ -825,7 +890,7 @@ class Nom035 extends Page
             });
         $this->coverDomainLeadershipResponses=$leadershipResponses;
         $workRelationsResponses = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [42, 43, 44, 45, 46, 71,72,73,74]);
             })
@@ -836,7 +901,7 @@ class Nom035 extends Page
             });
         $this->coverWorkRelationsResponses=$workRelationsResponses;
         $violenceResponses = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [57,58,59,60,61,62,63,64]);
             })
@@ -847,7 +912,7 @@ class Nom035 extends Page
             });
         $this->coverViolenceResponses=$violenceResponses;
         $performanceResponses = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [47,48,49,50,51,52]);
             })
@@ -858,7 +923,7 @@ class Nom035 extends Page
             });
         $this->coverPerformanceResponses=$performanceResponses;
         $inestableResponses = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereHas('question', function($q) {
                 $q->whereIn('order', [53,54,55,56]);
             })
@@ -1013,7 +1078,7 @@ class Nom035 extends Page
     {
         $identified = IdentifiedCollaborator::
         where('norma_id', $this->norma->id ?? null)
-        ->where('sede_id', auth()->user()->sede_id ?? null)
+        ->where('sede_id', $this->getCurrentSedeId() ?? null)
             ->with('user')
             ->get();
 
@@ -1032,10 +1097,11 @@ class Nom035 extends Page
     private function updateAvailableColaborators()
     {
         $identifiedIds = collect($this->identifiedColaborators)->pluck('id')->toArray();
+        $colabs = collect($this->colabs);
         if($identifiedIds){
-            $this->availableColaborators = $this->colabs->whereNotIn('id', $identifiedIds);
+            $this->availableColaborators = $colabs->whereNotIn('id', $identifiedIds);
         }else{
-            $this->availableColaborators = $this->colabs;
+            $this->availableColaborators = $colabs;
         }
 
     }
@@ -1047,7 +1113,7 @@ class Nom035 extends Page
             return;
         }
 
-        $collaborator = $this->colaborators->firstWhere('id', $this->selectedCollaborator);
+        $collaborator = collect($this->colaborators)->firstWhere('id', $this->selectedCollaborator);
         if (!$collaborator) {
             return;
         }
@@ -1129,7 +1195,7 @@ class Nom035 extends Page
                 // Si no existe la identificación, la creamos
                 if (!$identifiedCollaborator) {
                     $identifiedCollaborator = IdentifiedCollaborator::create([
-                        'sede_id' => auth()->user()->sede_id,
+                        'sede_id' => $this->getCurrentSedeId(),
                         'user_id' => $identified['id'],
                         'norma_id' => $normaId,
                         'type_identification' => 'manual',
@@ -1164,7 +1230,7 @@ class Nom035 extends Page
 
             // Primero encontramos todas las identificaciones para esta norma y sede
             $existingIdentifications = IdentifiedCollaborator::where('norma_id', $normaId)
-                ->where('sede_id', auth()->user()->sede_id)
+                ->where('sede_id', $this->getCurrentSedeId())
                 ->get();
 
             // Luego eliminamos las que no están en la lista actual
@@ -1209,7 +1275,7 @@ class Nom035 extends Page
 
         // Obtenemos todas las identificaciones con sus eventos
         $identifications = IdentifiedCollaborator::where('norma_id', $normaId)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->with(['user', 'traumaticEvent'])
             ->get();
 
@@ -1352,7 +1418,7 @@ class Nom035 extends Page
 
     }
     public function openTypeTest(){
-        $this->muestraGuideIII= $this->calculateSampleSize($this->colabs->count());
+        $this->muestraGuideIII= $this->calculateSampleSize(count($this->colabs));
 
         $this->dispatch('open-modal', id: 'type-test-modal');
     }
@@ -1364,11 +1430,12 @@ class Nom035 extends Page
     // Metodo para descargar la plantilla de Word personalizada
     public function descargarWord()
     {
+
         $templatePath = storage_path('app/plantillas/Politica_de_riesgos_template.docx'); // Mueve el archivo ahí
         $sede = auth()->user()->sede->name;
         $nombreArchivoSalida = 'Politica_Riesgos_' . str_replace(' ', '_', $sede) . '.docx';
         //$sede = auth()->user()->sede->name;
-        if (auth()->user()->sede_id===3) {
+        if ($this->getCurrentSedeId()===3) {
             $sede = 'ADMINISTRADORA DE CENTRALES Y TERMINALES';
         }else{
             $sede = auth()->user()->sede?->company_name ?? 'Sin Razón Social';
@@ -1548,12 +1615,12 @@ class Nom035 extends Page
     public function downloadPdfShift()
     {
         $identifiedEmployees = IdentifiedCollaborator::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->with(['user', 'traumaticEvent'])
             ->get();
         //Quiero traer los empleados que contestaron la encuesta de la Guía I
         $totalPersonsSurvey = TraumaticEventSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->get();
 
         // Verificar si hay empleados identificados
@@ -1895,7 +1962,7 @@ class Nom035 extends Page
 
         //quiero traer todos los usuarios que respondieron la encuesta de la guia II
         $users = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->with('user')
             ->get()
             ->groupBy('user_id')
@@ -2013,7 +2080,7 @@ class Nom035 extends Page
 
         // Traer todos los usuarios que respondieron la encuesta de la guía II
         $users = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->with('user')
             ->get()
             ->groupBy('user_id')
@@ -2416,7 +2483,7 @@ class Nom035 extends Page
 
         // Traer todos los usuarios que respondieron la encuesta de la guía II
         $users = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->with('user')
             ->get()
             ->groupBy('user_id')
@@ -3333,7 +3400,7 @@ class Nom035 extends Page
     public function sumaryResults(){
         try {
             $normaId = $this->norma->id;
-            $sedeId = auth()->user()->sede_id;
+            $sedeId = $this->getCurrentSedeId();
 
 
             if ($this->level === 2) {
@@ -3575,7 +3642,7 @@ class Nom035 extends Page
 
 
        // $colaboradores = User::where('sede_id', $user->sede_id)->where('status','=',1)->where('created_at','<=',$periodo)->count();
-        $colaboradores=$this->colabs->count();
+        $colaboradores=count($this->colabs);
         $recomendaciones = [
             'Muy Alto' =>'Se requiere realizar el análisis de cada categoría y dominio para establecer las acciones de intervención apropiadas, mediante un Programa de intervención que deberá incluir evaluaciones específicas1, y contemplar campañas de sensibilización, revisar la política de prevención de riesgos psicosociales y programas para la prevención de los factores de riesgo psicosocial, la promoción de un entorno organizacional favorable y la prevención de la violencia laboral, así como reforzar su aplicación y difusión.',
             'Alto' => 'Se requiere realizar un análisis de cada categoría y dominio, de manera que se puedan determinar las acciones de intervención apropiadas a través de un Programa de intervención, que podrá incluir una evaluación específica y deberá incluir una campaña de sensibilización, revisar la política de prevención de riesgos psicosociales y programas para la prevención de los factores de riesgo psicosocial, la promoción de un entorno organizacional favorable y la prevención de la violencia laboral, así como reforzar su aplicación y difusión.',
@@ -3610,7 +3677,7 @@ class Nom035 extends Page
 
         // Obtener todas las calificaciones individuales
         $userScores = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->get()
             ->groupBy('user_id')
             ->map(function ($items) {
@@ -3663,7 +3730,7 @@ class Nom035 extends Page
 
 
             $totalScore = RiskFactorSurvey::where('norma_id', $this->norma->id)
-                ->where('sede_id', auth()->user()->sede_id)
+                ->where('sede_id', $this->getCurrentSedeId())
                 ->whereIn('question_id', $realQuestionIds)
                 ->get()
                 ->groupBy('user_id')
@@ -3673,7 +3740,7 @@ class Nom035 extends Page
                 ->avg();
 
             $userCount = RiskFactorSurvey::where('norma_id', $this->norma->id)
-                ->where('sede_id', auth()->user()->sede_id)
+                ->where('sede_id', $this->getCurrentSedeId())
                 ->whereIn('question_id', $realQuestionIds)
                 ->distinct('user_id')
                 ->count('user_id');
@@ -3827,7 +3894,7 @@ class Nom035 extends Page
     private function fillCollaboratorsList(TemplateProcessor $template)
     {
         $userScores = RiskFactorSurvey::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->with('user')
             ->get()
             ->groupBy('user_id')
@@ -4312,7 +4379,7 @@ class Nom035 extends Page
             ->latest()
             ->first();
         $periodo=$campaig->end_date??now();
-        $colaboradores=$this->colabs->count();
+        $colaboradores=count($this->colabs);
         //$colaboradores = User::where('sede_id', $user->sede_id)->where('status','=',1)->where('created_at','<=',$periodo)->count();
         $total_colab=Nom035Process::where('id',$this->norma->id)->where('sede_id',$user->sede_id)->first()?->total_employees??0;
         /*
@@ -4468,7 +4535,7 @@ class Nom035 extends Page
         $counters = ['vh' => 0, 'h' => 0, 'm' => 0, 'b' => 0, 'n' => 0];
 
         $userScores = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereIn('question_id', $questionIds)
             ->get()
             ->groupBy('user_id')
@@ -4512,7 +4579,7 @@ class Nom035 extends Page
         $counters = ['vh' => 0, 'h' => 0, 'm' => 0, 'b' => 0, 'n' => 0];
 
         $userScores = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->whereIn('question_id', $questionIds)
             ->get()
             ->groupBy('user_id')
@@ -4557,7 +4624,7 @@ class Nom035 extends Page
     private function fillCollaboratorsListG3(TemplateProcessor $template)
     {
         $userScores = RiskFactorSurveyOrganizational::where('norma_id', $this->norma->id)
-            ->where('sede_id', auth()->user()->sede_id)
+            ->where('sede_id', $this->getCurrentSedeId())
             ->with('user')
             ->get()
             ->groupBy('user_id')
@@ -4886,7 +4953,7 @@ class Nom035 extends Page
     public function downloadProfileReport()
     {
         try {
-            $sedeId = auth()->user()->sede_id;
+            $sedeId = $this->getCurrentSedeId();
             $normaId = $this->norma->id ?? null;
 
             // Obtener todos los colaboradores activos de la sede

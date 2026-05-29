@@ -15,6 +15,8 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class EvaluationResource extends Resource
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $model = Evaluation::class;
     protected static ?string $navigationGroup = 'Evaluaciones';
     protected static ?string $navigationLabel = 'Evaluación 360';
