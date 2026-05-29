@@ -12,10 +12,10 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained()->onDelete('cascade'); // Colaborador evaluado
             $table->foreignId('supervisor_id')->constrained('users')->onDelete('cascade'); // Supervisor que realiza la evaluación
             $table->date('evaluation_date'); // Fecha de la evaluación
-            $table->boolean('initial')->nullable()->default('false');
-            $table->boolean('follow_up')->nullable()->default('false');
-            $table->boolean('consolidated')->nullable()->default('false');
-            $table->boolean('final')->nullable()->default('false');
+            $table->boolean('initial')->nullable()->default(false);
+            $table->boolean('follow_up')->nullable()->default(false);
+            $table->boolean('consolidated')->nullable()->default(false);
+            $table->boolean('final')->nullable()->default(false);
             $table->enum('status', ['in_progress', 'completed'])->default('in_progress'); // Estado de la evaluación
             $table->timestamps();
         });
