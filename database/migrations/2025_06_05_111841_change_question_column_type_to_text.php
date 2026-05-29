@@ -15,10 +15,10 @@ return new class extends Migration
             // 1. Dropear el índice actual que está estorbando.
             // Si era un índice único común, usa dropUnique. Si era normal, usa dropIndex.
             // Laravel por defecto nombra los índices únicos como: 'tabla_columna_unique'
-            $table->dropUnique('questions_question_unique');
+            //$table->dropUnique('questions_question_unique');
 
             // NOTA: Si no se llama así o no es único, prueba con:
-            // $table->dropIndex('questions_question_index');
+            $table->dropIndex('questions_question_index');
         });
 
         Schema::table('questions', function (Blueprint $table) {
