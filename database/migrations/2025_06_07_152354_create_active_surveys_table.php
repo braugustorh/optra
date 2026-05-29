@@ -19,7 +19,7 @@ return new class extends Migration
             $table->foreignId('evaluations_type_id')
                 ->constrained('evaluations_types')
                 ->onDelete('cascade');
-            $table->boolean('some_users')->default('false');
+            $table->boolean('some_users')->default(false);
             $table->timestamps();
         });
     }
