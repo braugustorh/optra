@@ -87,11 +87,12 @@ class AdminPanelProvider extends PanelProvider
                 CheckUserStatusAndEvaluation::class,
             ])
             ->plugins([
+                /*
                 FilamentBackgroundsPlugin::make()
                     ->imageProvider(
                         MyImages::make()
                             ->directory('images/backgrounds')
-                    ),
+                    ), */
             ])->databaseNotifications();
 
 
