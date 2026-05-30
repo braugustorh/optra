@@ -1431,7 +1431,7 @@ class Nom035 extends Page
     public function descargarWord()
     {
 
-        $templatePath = storage_path('app/plantillas/Politica_de_riesgos_template.docx'); // Mueve el archivo ahí
+        $templatePath = storage_path('app/plantillas/Politica_de_riesgos_template_Optra.docx'); // Mueve el archivo ahí
         $sede = auth()->user()->sede->name;
         $nombreArchivoSalida = 'Politica_Riesgos_' . str_replace(' ', '_', $sede) . '.docx';
         //$sede = auth()->user()->sede->name;
