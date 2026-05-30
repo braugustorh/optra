@@ -184,7 +184,7 @@
                 </p>
                 <br>
                 <p>
-                    Agradecemos profundamente tu tiempo y sinceridad al completar la Guía de Referencia II - Cuestionario para identificar los factores de riesgo psicosocial. Para ADC tu colaboración es esencial para promover un entorno laboral seguro y saludable.
+                    Agradecemos profundamente tu tiempo y sinceridad al completar la Guía de Referencia II - Cuestionario para identificar los factores de riesgo psicosocial. Para Optra tu colaboración es esencial para promover un entorno laboral seguro y saludable.
                 </p>
                 <br>
                 <p>

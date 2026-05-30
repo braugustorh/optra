@@ -16,7 +16,7 @@
         <x-filament::section icon="heroicon-s-exclamation-circle" icon-color="warning">
             <div class="mb-4">
                 <p class="text-xl font-bold text-gray-900 dark:text-white">
-                    Bienvenido(a) a la Encuesta de Identificación de los Factores de Riesgo Psicosociales.
+                    Bienvenido(a) a la Encuesta de Identificación de los Factores de Riesgo Psicosociales Y Entorno Organizacional.
                 </p>
                 <br>
                 <p><strong>Estimado(a) colaborador(a),</strong></p>
@@ -185,7 +185,7 @@
                 <br>
                 <p>
                     Agradecemos profundamente tu tiempo y sinceridad al completar la Guía de Referencia III - Cuestionario para identificar los factores de riesgo psicosocial y evaluación del entorno organizacional.
-                    Para ADC tu colaboración es esencial para promover un entorno laboral seguro y saludable.
+                    Para Optra tu colaboración es esencial para promover un entorno laboral seguro y saludable.
                 </p>
                 <br>
                 <p>

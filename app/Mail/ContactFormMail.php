@@ -25,7 +25,7 @@ class ContactFormMail extends Mailable
     {
         return new Envelope(
             from: new Address('sedyco@adcentrales.com', 'SEDyCO adc'),
-            subject: 'Nuevo mensaje de contacto desde ADC Plataforma',
+            subject: 'Nuevo mensaje de contacto desde la Plataforma',
         );
     }
 

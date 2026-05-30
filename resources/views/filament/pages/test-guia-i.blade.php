@@ -32,7 +32,7 @@
             <p><strong>Estimado(a) colaborador(a),</strong></p>
             <br>
             <p>
-                En ADC Centrales, nos preocupamos por tu bienestar y por garantizar un entorno laboral seguro y saludable, en cumplimiento con la
+                En Optra, nos preocupamos por tu bienestar y por garantizar un entorno laboral seguro y saludable, en cumplimiento con la
                 Norma Oficial Mexicana NOM-035-STPS-2018. Este cuestionario tiene como objetivo identificar si has estado expuesto(a) a
                 algún acontecimiento traumático severo relacionado con tu trabajo, como accidentes, situaciones de violencia o eventos que hayan
                 impactado tu bienestar.
@@ -592,7 +592,7 @@
                 </p>
                 <br>
                 <p>
-                    Agradecemos profundamente tu tiempo y sinceridad al completar la Guía de Referencia I - Cuestionario para identificar a los trabajadores que fueron sujetos a acontecimientos traumáticos severos. Para ADC tu colaboración es esencial para promover un entorno laboral seguro y saludable.
+                    Agradecemos profundamente tu tiempo y sinceridad al completar la Guía de Referencia I - Cuestionario para identificar a los trabajadores que fueron sujetos a acontecimientos traumáticos severos. Para Optra tu colaboración es esencial para promover un entorno laboral seguro y saludable.
                 </p>
 
                 <br>
