@@ -56,7 +56,7 @@ class DocumentsLibraryWidget extends Widget
                         $sede = auth()->user()->sede?->company_name ?? 'Sin Razón Social';
                     }
                     // 2. Cargar la plantilla
-                    $templatePath = storage_path('app/plantillas/Protocolo.docx');
+                    $templatePath = storage_path('app/plantillas/protocolo-optra-CT.docx');
 
                     if (!file_exists($templatePath)) {
                         throw new \Exception('No se encontró la plantilla del protocolo');

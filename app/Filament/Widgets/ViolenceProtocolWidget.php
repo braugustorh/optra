@@ -144,7 +144,7 @@ class ViolenceProtocolWidget extends Widget
                 ->send();
         }
         */
-        $path = storage_path('app/plantillas/Protocolo2026.pdf');
+        $path = storage_path('app/plantillas/ProtocoloOptra2026.pdf');
 
         // Verificamos si existe antes de intentar descargarlo
         if (!file_exists($path)) {
