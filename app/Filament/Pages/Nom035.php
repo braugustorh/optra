@@ -3535,7 +3535,7 @@ class Nom035 extends Page
                 $this->openModalResults();
             }
 
-            $templatePath = storage_path('app/plantillas/informe_resultados_guia2.docx');
+            $templatePath = storage_path('app/plantillas/optra_informe_resultados_guia2.docx');
 
             if (!file_exists($templatePath)) {
                 throw new \Exception('No se encontró la plantilla de Guía II');
@@ -4230,7 +4230,7 @@ class Nom035 extends Page
     public function generarInformeGuiaIII()
     {
         try {
-            $templatePath = storage_path('app/plantillas/informe_guiaIII_template.docx');
+            $templatePath = storage_path('app/plantillas/optra_informe_guiaIII_template.docx');
 
             if (!file_exists($templatePath)) {
                 throw new \Exception('Plantilla no encontrada');
