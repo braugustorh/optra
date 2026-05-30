@@ -353,6 +353,7 @@ class PortfolioResource extends Resource
                             ->directory(fn (Get $get): string => "portafolio/{$get('user_id')}")
                             ->default(null),
                     ])->columns(2),
+
             ])->columnSpanFull();
 
         return $form->schema([
