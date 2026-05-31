@@ -49,6 +49,12 @@ class UserResource extends Resource
             'Visor','Gerente');
     }
 
+    public static function canCreate(): bool
+    {
+        return \auth()->user()->hasAnyRole('RH', 'RH Corp', 'Administrador');
+    }
+
+
 
     public static function form(Form $form): Form
     {

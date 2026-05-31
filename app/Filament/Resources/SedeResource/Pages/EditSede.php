@@ -15,7 +15,7 @@ class EditSede extends EditRecord
     {
         return [
             Actions\DeleteAction::make()
-                ->visible(fn () => VisorRoleHelper::canEdit()),
+                ->visible(fn () => VisorRoleHelper::canEditOrDelete()),
         ];
     }
     protected function authorizeAccess(): void

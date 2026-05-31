@@ -195,6 +195,15 @@ class SedeResource extends Resource
             //
         ];
     }
+    public static function canCreate(): bool
+    {
+        return \auth()->user()->hasAnyRole('RH', 'RH Corp', 'Administrador');
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return VisorRoleHelper::canEdit();
+    }
 
     public static function getPages(): array
     {
