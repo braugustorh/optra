@@ -1571,7 +1571,7 @@ class Nom035 extends Page
     }
     public function descargarExcel()
     {
-        $path = storage_path('app/plantillas/plan_de_accion.xlsx');
+        $path = storage_path('app/plantillas/Plan_de_Accion_NOM035_OPTRA.xlsx');
         return response()->download($path, 'Plan_de_Accion_NOM035.xlsx');
     }
 
