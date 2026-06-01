@@ -65,3 +65,10 @@ Route::get('/evaluacion/{token}/realizar', TakePsychometricTest::class)
 Route::view('/evaluation/finished', 'evaluations.process-finished')
     ->name('evaluation.finished');
 
+// ── Reporte General Psicométrico (preview + descarga PDF) ──────────────────
+Route::middleware('auth')->group(function () {
+    Route::get('/reporte-psicometrico/{key}', [\App\Http\Controllers\PsychometricReportController::class, 'show'])
+        ->name('psychometric.report.preview');
+    Route::get('/reporte-psicometrico/{key}/pdf', [\App\Http\Controllers\PsychometricReportController::class, 'downloadPdf'])
+        ->name('psychometric.report.pdf');
+});
