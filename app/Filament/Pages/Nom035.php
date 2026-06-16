@@ -93,7 +93,7 @@ class Nom035 extends Page
 
     public static function canView(): bool
     {
-        return auth()->check() && auth()->user()->hasAnyRole(['Administrador', 'RH Corp']);
+        return auth()->check() && auth()->user()->hasAnyRole(['Administrador', 'RH Corp','RH']);
     }
     public static function shouldRegisterNavigation(): bool
     {
