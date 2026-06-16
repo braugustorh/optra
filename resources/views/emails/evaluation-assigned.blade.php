@@ -22,9 +22,9 @@
     <div class="content">
         <p>Hola, <strong>{{ $evaluable->name }}</strong>.</p>
 
-        <p>Se te ha asignado una batería de evaluaciones psicométricas como parte de tu proceso en <strong>Administradora de Centrales y Terminales</strong>.</p>
+        <p>Se te ha asignado una batería de evaluaciones psicométricas como parte de tu proceso en <strong>Consorcio Optra</strong>.</p>
 
-        <p>Por favor, asegúrate de contar con tiempo suficiente (aprox. 30-45 minutos) y una conexión estable a internet antes de comenzar.</p>
+        <p>Por favor, asegúrate de contar con tiempo suficiente (aprox. 45-60 minutos) y una conexión estable a internet antes de comenzar.</p>
 
         <div style="text-align: center;">
             <a href="{{ route('evaluation.landing', ['token' => $token]) }}" class="button">
