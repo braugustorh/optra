@@ -122,26 +122,45 @@ class GeneralReportService
             ->toArray();
 
         // 4. Calcular competencias
-        $competencias = app(CompetencyScoringService::class)->calculate(
+        $competencyService = app(CompetencyScoringService::class);
+        $competencias = $competencyService->calculate(
             $consolidated['puesto'] ?? 'General',
             $testResults
         );
+
+        // >>> NUEVO: Calcular el % de ajuste estricto en PHP <<<
+        $ajusteGlobal = $competencyService->calcularAjusteGlobal($competencias);
+        // Obtener el perfil Ideal para la gráfica
+        $competenciasIdeal = $competencyService->getIdealCompetenciesProfile(
+            $consolidated['puesto'] ?? 'General'
+        );
+
+        // Regla de negocio inquebrantable en PHP
+        if ($ajusteGlobal >= 85) $dictamenPHP = "APTO";
+        elseif ($ajusteGlobal >= 70) $dictamenPHP = "APTO CON PLAN DE DESARROLLO";
+        elseif ($ajusteGlobal >= 60) $dictamenPHP = "RIESGO / EN OBSERVACIÓN";
+        else $dictamenPHP = "NO APTO";
+
         // 4b. Obtener perfil ideal Cleaver para el radar chart
         $cleaverIdeal = $deepSeek->getIdealCleaverForChart(
             $consolidated['puesto'] ?? 'General'
         );
 
-
-        // 5. Llamar a DeepSeek
-        $aiResponse = $deepSeek->generateReport($candidateData, $testResults, $competencias);
+        // 5. Llamar a DeepSeek (Actualizamos la firma para pasar el ajuste global)
+        $aiResponse = $deepSeek->generateReport($candidateData, $testResults, $competencias, $ajusteGlobal,$dictamenPHP);
 
         // Detectar si la IA devolvió un error
         $aiError = null;
+        if ($aiResponse && isset($aiResponse['reporte']['resultado_global'])) {
+            $aiResponse['reporte']['resultado_global']['dictamen'] = $dictamenPHP;
+            $aiResponse['reporte']['resultado_global']['apto'] = ($ajusteGlobal >= 70);
+            $aiResponse['reporte']['resultado_global']['porcentaje_ajuste'] = $ajusteGlobal;
+        }
+
         if (isset($aiResponse['__ai_error']) && $aiResponse['__ai_error'] === true) {
             $aiError    = $aiResponse;
             $aiResponse = null;
         } elseif (empty($aiResponse)) {
-            // Si la respuesta está vacía pero no hay __ai_error, es un error no detectado
             $aiError = [
                 '__ai_error' => true,
                 'message' => 'DeepSeek devolvió una respuesta vacía o no válida',
@@ -156,6 +175,9 @@ class GeneralReportService
             'cleaver_ideal' => $cleaverIdeal,
             'ai_report'    => $aiResponse,
             'ai_error'     => $aiError,
+            'ajuste_global'=> $ajusteGlobal,      // <-- AQUI PASAMOS EL 48.91%
+            'dictamen_calculado' => $dictamenPHP, // <-- AQUI PASAMOS EL "NO APTO"
+            'competencias_ideal' => $competenciasIdeal,
             'ai_raw'       => is_string($aiResponse) ? $aiResponse : json_encode($aiResponse, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
         ];
     }

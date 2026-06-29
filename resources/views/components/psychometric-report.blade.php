@@ -1,9 +1,10 @@
-@props(['reportData', 'candidateData', 'psychometricResults', 'competencias', 'cleaverIdeal' => ['D' => 50, 'I' => 50, 'S' => 50, 'C' => 50], 'meta', 'reportKey'])
+@props(['reportData', 'candidateData', 'psychometricResults', 'competencias', 'cleaverIdeal' => ['D' => 50, 'I' => 50, 'S' => 50, 'C' => 50], 'meta', 'reportKey', 'ajusteGlobalPhp', 'dictamenPhp', 'competenciasIdeal'])
 @php
     $reporteBase = $reportData['reporte'] ?? $reportData;
-    $apto = $reporteBase['resultado_global']['apto'] ?? false;
-    $dictamen = $reporteBase['resultado_global']['dictamen'] ?? ($apto ? 'Apto' : 'No Apto');
-    $porcentajeAjuste = $reporteBase['resultado_global']['porcentaje_ajuste'] ?? 0;
+
+    // >>> CAMBIO CLAVE: Usamos PHP como fuente de verdad absoluta <<<
+    $dictamen = $dictamenPhp;
+    $porcentajeAjuste = $ajusteGlobalPhp;
 
     // Variables de estilo dinámico
     $badgeStyle = 'badge-success';
@@ -54,7 +55,7 @@
         .gauge-ring circle.progress { stroke: var(--blue); stroke-linecap: round; stroke-dasharray: 439.82; transition: stroke-dashoffset 1.8s cubic-bezier(0.4, 0, 0.2, 1); }
         .gauge-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         /* Semáforo Competencias */
-        .competency-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+        .competency-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 18px; display: flex; align-items: center; justify-content: space-between; gap: 14px; height: 100%; }
         .competency-icon { font-size: 1.5rem; background: #f1f5f9; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); }
         .status-strong { background-color: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
         .status-strong .competency-level { color: var(--green-text); }
@@ -147,13 +148,61 @@
                         </div>
                     </div>
                     @php
-                        $fuertes = collect($competencias)->where('nivel', 'strong')->count();
-                        $desarrollar = collect($competencias)->where('nivel', '!=', 'strong')->count();
+                        // Contadores para Competencias Requeridas
+                        $reqFuertes = collect($competencias)->where('requerida', true)->where('nivel', 'strong')->count();
+                        $reqMod = collect($competencias)->where('requerida', true)->where('nivel', 'moderate')->count();
+                        $reqDeb = collect($competencias)->where('requerida', true)->where('nivel', 'weak')->count();
+
+                        // Contadores para Competencias Adicionales
+                        $adicionales = collect($competencias)->where('requerida', false)->count();
+                        $adFuertes = collect($competencias)->where('requerida', false)->where('nivel', 'strong')->count();
+                        $adMod = collect($competencias)->where('requerida', false)->where('nivel', 'moderate')->count();
+                        $adDeb = collect($competencias)->where('requerida', false)->where('nivel', 'weak')->count();
                     @endphp
-                    <div class="w-full border-t border-gray-100 pt-4 flex flex-col gap-3">
-                        <div class="flex justify-between items-center text-sm"><span class="text-gray-500 font-medium">Nivel de Ajuste</span><span class="font-bold text-gray-900">{{ $reporteBase['resultado_global']['nivel_ajuste'] ?? 'No definido' }}</span></div>
-                        <div class="flex justify-between items-center text-sm"><span class="text-gray-500 font-medium">Competencias Fuertes</span><span class="font-bold text-gray-900">{{ $fuertes }} / {{ count($competencias) }}</span></div>
-                        <div class="flex justify-between items-center text-sm"><span class="text-gray-500 font-medium">Áreas de Oportunidad</span><span class="font-bold text-gray-900">{{ $desarrollar }} / {{ count($competencias) }}</span></div>
+                    <div class="w-full border-t border-gray-100 pt-4 flex flex-col gap-2">
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-gray-500 font-medium">Nivel de Ajuste</span>
+                            <span class="font-bold text-gray-900">{{ $reporteBase['resultado_global']['nivel_ajuste'] ?? 'No definido' }}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-gray-500 font-medium">Fuertes (Req)</span>
+                            <span class="font-bold text-teal-600">{{ $reqFuertes }}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-gray-500 font-medium">Moderadas (Req)</span>
+                            <span class="font-bold text-amber-600">{{ $reqMod }}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-gray-500 font-medium">Débiles (Req)</span>
+                            <span class="font-bold text-rose-600">{{ $reqDeb }}</span>
+                        </div>
+
+                        <div class="pt-2 mt-1 border-t border-dashed border-gray-200/70 flex flex-col gap-1.5">
+                            <div class="flex justify-between items-center text-sm">
+                                <span class="text-gray-400 font-medium">Competencias Complementarias</span>
+                                <span class="font-bold text-gray-400">{{ $adicionales }}</span>
+                            </div>
+
+                            @if($adicionales > 0)
+                                <div class="flex justify-end items-center gap-1.5">
+                                    @if($adFuertes > 0)
+                                        <span class="flex items-center gap-1 text-[10px] font-bold text-teal-600 bg-teal-50 border border-teal-100/50 px-1.5 py-0.5 rounded-md shadow-sm">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-teal-500"></span>{{ $adFuertes }}
+                                    </span>
+                                    @endif
+                                    @if($adMod > 0)
+                                        <span class="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-100/50 px-1.5 py-0.5 rounded-md shadow-sm">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>{{ $adMod }}
+                                    </span>
+                                    @endif
+                                    @if($adDeb > 0)
+                                        <span class="flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100/50 px-1.5 py-0.5 rounded-md shadow-sm">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>{{ $adDeb }}
+                                    </span>
+                                    @endif
+                                </div>
+                            @endif
+                        </div>
                     </div>
                 </div>
             </section>
@@ -163,7 +212,7 @@
                 <div class="card-header">
                     <h2>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-                        Perfil Conductual — Cleaver (DISC)
+                        Alineación de Competencias
                     </h2>
                 </div>
                 <div class="card-body flex-1 flex flex-col items-center justify-center">
@@ -187,14 +236,21 @@
                 </h2>
             </div>
             <div class="card-body">
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 items-stretch">
                     @foreach($competencias as $comp)
                         <div class="competency-card status-{{ $comp['nivel'] }}">
                             <div class="flex items-center gap-3">
                                 <div class="competency-icon">{{ $comp['icono'] }}</div>
                                 <div class="flex flex-col">
-                                    <span class="text-sm font-bold text-gray-900 leading-tight">{{ $comp['nombre'] }}</span>
-                                    <span class="competency-level text-xs font-semibold">{{ $comp['etiqueta'] }}</span>
+                                    <span class="text-sm font-bold text-gray-900 leading-tight mb-1">{{ $comp['nombre'] }}</span>
+                                    <div class="flex items-center gap-2">
+                                        <span class="competency-level text-xs font-semibold">{{ $comp['etiqueta'] }}</span>
+                                        @if(!$comp['requerida'])
+                                            <span class="bg-white/50 text-gray-400 text-[8px] font-bold px-1.5 py-0.5 rounded border border-gray-100 uppercase tracking-wider">
+                                                Complementaria
+                                            </span>
+                                        @endif
+                                    </div>
                                 </div>
                             </div>
                             <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style="background-color: var(--{{ $comp['nivel'] === 'strong' ? 'green' : ($comp['nivel'] === 'moderate' ? 'yellow' : 'red') }}); color: white;">
@@ -211,46 +267,46 @@
 
         <!-- Plan de Desarrollo 90 días -->
         @if(!empty($reporteBase['plan_desarrollo']))
-        <section class="card break-inside-avoid">
-            <div class="card-header">
-                <h2>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                    Plan de Desarrollo Recomendado — 90 Días
-                </h2>
-            </div>
-            <div class="card-body">
-                <div class="flex flex-col gap-3.5">
-                    @foreach($reporteBase['plan_desarrollo'] as $plan)
-                        @php
-                            $pColor = $plan['prioridad'] === 'critical' ? 'var(--red)' : ($plan['prioridad'] === 'important' ? 'var(--yellow)' : 'var(--blue)');
-                            $pBgBox = $plan['prioridad'] === 'critical' ? 'rgba(254, 242, 242, 0.4)' : ($plan['prioridad'] === 'important' ? 'rgba(255, 251, 235, 0.4)' : 'rgba(245, 243, 255, 0.4)');
-                            $pBgIcon = $plan['prioridad'] === 'critical' ? '#fee2e2' : ($plan['prioridad'] === 'important' ? '#fef3c7' : '#e0e7ff');
-                        @endphp
-                        <div class="flex items-start gap-4 p-5 rounded-xl border border-gray-200 bg-white transition hover:border-gray-300" style="border-left: 4px solid {{ $pColor }}; background-color: {{ $pBgBox }};">
-                            <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style="background-color: {{ $pBgIcon }}; color: {{ $pColor }};">
-                                @if($plan['prioridad'] === 'critical')
-                                    <svg viewBox="0 0 24 24" width="18" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                                @else
-                                    <svg viewBox="0 0 24 24" width="18" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
-                                @endif
-                            </div>
-                            <div class="flex-1">
-                                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-1.5">
-                                    <h4 class="text-[15px] font-bold text-gray-900">{{ $plan['titulo'] }}</h4>
-                                    <span class="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full whitespace-nowrap">{{ $plan['periodo'] }}</span>
-                                </div>
-                                <p class="text-sm text-gray-600 leading-relaxed">{{ $plan['descripcion'] }}</p>
-                            </div>
-                        </div>
-                    @endforeach
+            <section class="card break-inside-avoid">
+                <div class="card-header">
+                    <h2>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                        Plan de Desarrollo Recomendado — 90 Días
+                    </h2>
                 </div>
-            </div>
-        </section>
+                <div class="card-body">
+                    <div class="flex flex-col gap-3.5">
+                        @foreach($reporteBase['plan_desarrollo'] as $plan)
+                            @php
+                                $pColor = $plan['prioridad'] === 'critical' ? 'var(--red)' : ($plan['prioridad'] === 'important' ? 'var(--yellow)' : 'var(--blue)');
+                                $pBgBox = $plan['prioridad'] === 'critical' ? 'rgba(254, 242, 242, 0.4)' : ($plan['prioridad'] === 'important' ? 'rgba(255, 251, 235, 0.4)' : 'rgba(245, 243, 255, 0.4)');
+                                $pBgIcon = $plan['prioridad'] === 'critical' ? '#fee2e2' : ($plan['prioridad'] === 'important' ? '#fef3c7' : '#e0e7ff');
+                            @endphp
+                            <div class="flex items-start gap-4 p-5 rounded-xl border border-gray-200 bg-white transition hover:border-gray-300" style="border-left: 4px solid {{ $pColor }}; background-color: {{ $pBgBox }};">
+                                <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style="background-color: {{ $pBgIcon }}; color: {{ $pColor }};">
+                                    @if($plan['prioridad'] === 'critical')
+                                        <svg viewBox="0 0 24 24" width="18" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                                    @else
+                                        <svg viewBox="0 0 24 24" width="18" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+                                    @endif
+                                </div>
+                                <div class="flex-1">
+                                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-1.5">
+                                        <h4 class="text-[15px] font-bold text-gray-900">{{ $plan['titulo'] }}</h4>
+                                        <span class="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full whitespace-nowrap">{{ $plan['periodo'] }}</span>
+                                    </div>
+                                    <p class="text-sm text-gray-600 leading-relaxed">{{ $plan['descripcion'] }}</p>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            </section>
         @endif
 
         <!-- Footer -->
         <footer class="grid grid-cols-2 md:grid-cols-4 gap-5 pt-6 border-t border-gray-200 mt-10 text-xs text-gray-500 mb-6">
-            <div><label class="block font-bold text-gray-900 mb-1">Modelo</label>SEDYCO v1.1</div>
+            <div><label class="block font-bold text-gray-900 mb-1">Modelo</label>SEDYCO v1.2</div>
             <div><label class="block font-bold text-gray-900 mb-1">Próxima Revisión</label>{{ \Carbon\Carbon::parse($meta['generado_en'] ?? now())->addYear()->format('d / m / Y') }}</div>
             <div class="col-span-2 text-center text-gray-400 font-medium">Documento confidencial — Propiedad exclusiva</div>
         </footer>
@@ -258,59 +314,79 @@
 
     <!-- Scripts de Vista -->
     <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        // Animación Gauge
-        const progressCircle = document.getElementById('gaugeProgress');
-        if (progressCircle) {
-            const percentage = {{ $porcentajeAjuste }};
-            const radius = 70;
-            const circumference = 2 * Math.PI * radius;
-            const offset = circumference - (percentage / 100) * circumference;
-            setTimeout(() => { progressCircle.style.strokeDashoffset = offset; }, 100);
-        }
+        document.addEventListener("DOMContentLoaded", function() {
+            // Animación Gauge
+            const progressCircle = document.getElementById('gaugeProgress');
+            if (progressCircle) {
+                const percentage = {{ $porcentajeAjuste }};
+                const radius = 70;
+                const circumference = 2 * Math.PI * radius;
+                const offset = circumference - (percentage / 100) * circumference;
+                setTimeout(() => { progressCircle.style.strokeDashoffset = offset; }, 100);
+            }
 
-        // Radar Cleaver
-        // Radar Cleaver
-        const ctx = document.getElementById('radarChart')?.getContext('2d');
-        if(ctx) {
-            new Chart(ctx, {
-                type: 'radar',
-                data: {
-                    labels: ['Dominancia (D)', 'Influencia (I)', 'Constancia (S)', 'Cumplimiento (C)'],
-                    datasets: [
-                        {
-                            label: 'Ideal SEDYCO',
-                            data: [{{ $cleaverIdeal['D'] }}, {{ $cleaverIdeal['I'] }}, {{ $cleaverIdeal['S'] }}, {{ $cleaverIdeal['C'] }}],
-                            backgroundColor: 'rgba(79, 70, 229, 0.08)',
-                            borderColor: '#4f46e5',
-                            borderWidth: 2,
-                            borderDash: [6, 4],
-                            pointBackgroundColor: '#4f46e5',
-                            pointRadius: 4,
-                        },
-                        {
-                            label: 'Candidato',
-                            data: [{{ $cleaverScores['D'] }}, {{ $cleaverScores['I'] }}, {{ $cleaverScores['S'] }}, {{ $cleaverScores['C'] }}],
-                            backgroundColor: 'rgba(13, 148, 136, 0.12)',
-                            borderColor: '#0d9488',
-                            borderWidth: 2,
-                            pointBackgroundColor: '#0d9488',
-                            pointRadius: 4,
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: true,
-                    plugins: {
-                        legend: { display: false }
+            // Radar Cleaver
+            // Radar Cleaver
+            const ctx = document.getElementById('radarChart')?.getContext('2d');
+            if(ctx) {
+                const rawCompetencias = @json($competencias);
+                const idealProfile = @json($competenciasIdeal ?? []);
+
+                // Ordenar para que las requeridas salgan primero juntas, luego las adicionales
+                const sorted = [...rawCompetencias].sort((a, b) => (a.requerida === b.requerida) ? 0 : a.requerida ? -1 : 1);
+
+                const labels = sorted.map(c => c.nombre);
+                const candidateData = sorted.map(c => c.puntaje);
+                const idealData = labels.map(label => idealProfile[label] || 70);
+
+                new Chart(ctx, {
+                    type: 'radar',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Ideal SEDYCO',
+                                data: idealData,
+                                backgroundColor: 'rgba(79, 70, 229, 0.08)',
+                                borderColor: '#4f46e5',
+                                borderWidth: 2,
+                                borderDash: [6, 4],
+                                pointBackgroundColor: '#4f46e5',
+                            },
+                            {
+                                label: 'Candidato',
+                                data: candidateData,
+                                backgroundColor: 'rgba(13, 148, 136, 0.20)',
+                                borderColor: '#0d9488',
+                                borderWidth: 2,
+                                pointBackgroundColor: '#0d9488',
+                            }
+                        ]
                     },
-                    scales: {
-                        r: { beginAtZero: true, min: 0, max: 100, ticks: { stepSize: 20 } }
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            r: {
+                                beginAtZero: true,
+                                min: 0,
+                                max: 100,
+                                ticks: { display: false },
+                                pointLabels: {
+                                    font: { size: 9, family: 'Inter' },
+                                    color: (context) => {
+                                        // CORRECCIÓN AQUÍ
+                                        const index = context.index;
+                                        const comp = sorted[index];
+                                        return (comp && comp.requerida === false) ? '#94a3b8' : '#475569';
+                                    }
+                                }
+                            }
+                        }
                     }
-                }
-            });
-        }
-    });
+                });
+            }
+        });
     </script>
 </div>

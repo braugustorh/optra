@@ -30,6 +30,10 @@ class PsychometricReportController extends Controller
             'cleaverIdeal'        => $data['cleaver_ideal'] ?? ['D' => 50, 'I' => 50, 'S' => 50, 'C' => 50],
             'meta'                => $data['meta'] ?? [],
             'aiAvailable'         => ! empty($data['ai_report']),
+            'ajusteGlobalPhp'     => $data['ajuste_global'] ?? 0,
+            'dictamenPhp'         => $data['dictamen_calculado'] ?? 'Pendiente',
+            'competenciasIdeal'   => $data['competencias_ideal'] ?? [],
+            'isPdfExport'         => false,
         ]);
     }
 
@@ -53,6 +57,10 @@ class PsychometricReportController extends Controller
             'meta'                => $data['meta'] ?? [],
             'aiAvailable'         => ! empty($data['ai_report']),
             'cleaverIdeal'        => $data['cleaver_ideal'] ?? ['D' => 50, 'I' => 50, 'S' => 50, 'C' => 50], // ← NUEVO
+            'competenciasIdeal'   => $data['competencias_ideal'] ?? [],
+            // >>> ESTAS DOS LÍNEAS FALTABAN AQUÍ <<<
+            'ajusteGlobalPhp'     => $data['ajuste_global'] ?? 0,
+            'dictamenPhp'         => $data['dictamen_calculado'] ?? 'Pendiente',
             'isPdfExport'         => true,
         ])->render();
 
@@ -69,7 +77,7 @@ class PsychometricReportController extends Controller
             'Content-Type' => 'application/json',
             'X-API-Key'    => config('services.pdfshift.api_key'),
         ])->withBody(json_encode($payload, JSON_UNESCAPED_UNICODE), 'application/json')
-          ->post('https://api.pdfshift.io/v3/convert/pdf');
+            ->post('https://api.pdfshift.io/v3/convert/pdf');
 
         if (! $response->successful()) {
             abort(500, 'No se pudo generar el PDF. Intenta de nuevo más tarde.');

@@ -494,9 +494,9 @@ class PsychometricDashboard extends Page implements HasTable
 
                         $friendlyMsg = match(true) {
                             str_contains(strtolower($aiErrMsg), 'insufficient balance')
-                                => 'La cuenta de DeepSeek no tiene saldo suficiente. Recarga en platform.deepseek.com y vuelve a intentarlo.',
+                            => 'La cuenta de DeepSeek no tiene saldo suficiente. Recarga en platform.deepseek.com y vuelve a intentarlo.',
                             str_contains(strtolower($aiErrMsg), 'rate limit')
-                                => 'Se alcanzó el límite de solicitudes de DeepSeek. Intenta en unos minutos.',
+                            => 'Se alcanzó el límite de solicitudes de DeepSeek. Intenta en unos minutos.',
                             default => "Error de IA [{$aiErrCode}]: {$aiErrMsg}",
                         };
 
@@ -535,8 +535,12 @@ class PsychometricDashboard extends Page implements HasTable
                                 'resultados' => $t['results'],
                             ])->values()->toArray(),
                         'competencias' => $output['competencias'] ?? [],
+                        'competencias_ideal' => $output['competencias_ideal'] ?? [],
                         'cleaver_ideal' => $output['cleaver_ideal'] ?? ['D' => 50, 'I' => 50, 'S' => 50, 'C' => 50],
                         'ai_report' => $analisisIa,
+                        'ai_error'           => $output['ai_error'] ?? null,
+                        'ajuste_global'      => $output['ajuste_global'] ?? 0,
+                        'dictamen_calculado' => $output['dictamen_calculado'] ?? 'Pendiente'
                     ];
 
                     \Illuminate\Support\Facades\Cache::put("psych_report_{$reportKey}", $reportDataToCache, now()->addHours(1));
@@ -648,11 +652,11 @@ class PsychometricDashboard extends Page implements HasTable
             $query->whereIn('status', ['assigned', 'started', 'in_progress']);
         }])->whereIn('id',[9,10,11,12])
             ->get()->map(function($type) {
-            return [
-                'name' => $type->name,
-                'count' => $type->psychometric_evaluations_count,
-            ];
-        })->toArray();
+                return [
+                    'name' => $type->name,
+                    'count' => $type->psychometric_evaluations_count,
+                ];
+            })->toArray();
     }
 
     public function getFilteredEvaluations()
@@ -799,7 +803,7 @@ class PsychometricDashboard extends Page implements HasTable
         // 1. Calculamos los resultados con tu cerebro psicométrico
         $service = new PsychometricScoringService();
         $results = $service->calculate($record);
-       // dd($results);
+        // dd($results);
         // 2. Preparamos los datos para la vista del PDF
         $candidateName = $record->evaluable->name ?? 'Candidato';
         $testName = $results['test_name'] ?? 'Evaluacion';
