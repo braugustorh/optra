@@ -1163,10 +1163,8 @@ class PsychometricScoringService
         // ─── PASO 2: ACUMULAR PUNTAJES POR SERIE ─────────────────────────────
         $porSerie = [];
         foreach ($competenceToSerie as $compId => $serieNum) {
-            $porSerie[$serieNum] = 0;
+            $porSerie[$serieNum] = 0.0;
         }
-
-        $puntajeBruto = 0;
 
         foreach ($userAnswers as $row) {
             if (! $row->is_correct) {
@@ -1178,14 +1176,21 @@ class PsychometricScoringService
                 continue;
             }
             $porSerie[$serieNum] += $peso;
-            $puntajeBruto        += $peso;
         }
 
-        // Redondear a enteros (los pesos son 1 o 2)
-        $puntajeBruto = (int) round($puntajeBruto);
+        // Redondear y aplicar el multiplicador x2 para las series II, V y X
+        $seriesConMultiplicador = [2, 5, 10];
         foreach ($porSerie as $k => $v) {
-            $porSerie[$k] = (int) round($v);
+            $puntajeBase = (int) round($v);
+            if (in_array($k, $seriesConMultiplicador)) {
+                $porSerie[$k] = $puntajeBase * 2;
+            } else {
+                $porSerie[$k] = $puntajeBase;
+            }
         }
+
+        // El puntaje bruto total es la suma de los cómputos parciales de todas las series
+        $puntajeBruto = array_sum($porSerie);
 
         // ─── PASO 3: CALCULAR CI desde tabla de equivalencias ─────────────────
         $ciScore = null;
@@ -1211,7 +1216,7 @@ class PsychometricScoringService
         // ─── PASO 5: CLASIFICACIÓN CAPACIDAD DE APRENDIZAJE ──────────────────
         $clasificacionCapacidad = 'Sin clasificación';
         foreach ($rangos_capacidad as $rango) {
-            if ($puntajeBruto >= $rango['min'] && $puntajeBruto <= $rango['max']) {
+            if ($ciScore >= $rango['min'] && $ciScore <= $rango['max']) {
                 $clasificacionCapacidad = $rango['clasificacion'];
                 break;
             }

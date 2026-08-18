@@ -98,7 +98,7 @@ class GeneralReportService
      *   ai_report    => respuesta de DeepSeek (array decodificado)
      *   ai_raw       => string JSON crudo para debug
      */
-    public function generateAiReport(string $batchId, DeepSeekService $deepSeek): array
+    public function generateAiReport(string $batchId, DeepSeekService $deepSeek, ?string $puestoOverride = null): array
     {
         // 1. Calcular resultados psicométricos
         $consolidated = $this->calculateBatch($batchId);
@@ -108,11 +108,16 @@ class GeneralReportService
         }
 
         $evaluable = $consolidated['evaluable'];
+        $puestoOriginal = $consolidated['puesto'] ?? 'General';
+
+        // Si se pasa un puestoOverride, se usa SOLO para el cálculo/interpretación;
+        // el registro original de la evaluación (puesto asignado) no se modifica.
+        $puestoNombre = $puestoOverride ?: $puestoOriginal;
 
         // 2. Preparar $candidateData para DeepSeek
         $candidateData = [
             'name'   => $evaluable->name ?? 'Sin nombre',
-            'puesto' => $consolidated['puesto'] ?? 'General',
+            'puesto' => $puestoNombre,
         ];
 
         // 3. Transformar tests al formato que espera DeepSeekService::generateReport()
@@ -123,38 +128,53 @@ class GeneralReportService
 
         // 4. Calcular competencias
         $competencyService = app(CompetencyScoringService::class);
-        $competencias = $competencyService->calculate(
-            $consolidated['puesto'] ?? 'General',
-            $testResults
-        );
 
-        // >>> NUEVO: Calcular el % de ajuste estricto en PHP <<<
+        $competencias = $competencyService->calculate($puestoNombre, $testResults);
+
+        // Ajuste Global (freno de seguridad) y Ajuste Relativo (protagonista del dictamen)
         $ajusteGlobal = $competencyService->calcularAjusteGlobal($competencias);
-        // Obtener el perfil Ideal para la gráfica
-        $competenciasIdeal = $competencyService->getIdealCompetenciesProfile(
-            $consolidated['puesto'] ?? 'General'
-        );
+        $ajusteRelativo = $competencyService->calcularAjusteRelativo($competencias, $puestoNombre);
 
-        // Regla de negocio inquebrantable en PHP
-        if ($ajusteGlobal >= 85) $dictamenPHP = "APTO";
-        elseif ($ajusteGlobal >= 70) $dictamenPHP = "APTO CON PLAN DE DESARROLLO";
-        elseif ($ajusteGlobal >= 60) $dictamenPHP = "RIESGO / EN OBSERVACIÓN";
-        else $dictamenPHP = "NO APTO";
+        // Contar descarriladores (Core Derailers) para la regla de seguridad del dictamen
+        $coreDerailers = 0;
+        foreach ($competencias as $comp) {
+            if (!empty($comp['requerida']) && ($comp['peso_global'] ?? 0) >= 0.15 && $comp['puntaje'] < 40) {
+                $coreDerailers++;
+            }
+        }
+
+        // Obtener dictamen dinámico según nivel jerárquico, conducido por el Ajuste Relativo
+        $dictamenPHP = $competencyService->obtenerDictamen($ajusteRelativo, $puestoNombre, $coreDerailers);
+
+        // Obtener el perfil Ideal para la gráfica
+        $competenciasIdeal = $competencyService->getIdealCompetenciesProfile($puestoNombre);
 
         // 4b. Obtener perfil ideal Cleaver para el radar chart
-        $cleaverIdeal = $deepSeek->getIdealCleaverForChart(
-            $consolidated['puesto'] ?? 'General'
-        );
+        $cleaverIdeal = $deepSeek->getIdealCleaverForChart($puestoNombre);
 
-        // 5. Llamar a DeepSeek (Actualizamos la firma para pasar el ajuste global)
-        $aiResponse = $deepSeek->generateReport($candidateData, $testResults, $competencias, $ajusteGlobal,$dictamenPHP);
+        // 4c. Extraer alertas cualitativas de Kostick (extremos 0-2 y 7-9)
+        $alertasKostick = [];
+        $kostickKey = collect($testResults)->keys()->first(fn ($k) => stripos($k, 'Kostick') !== false);
+        if ($kostickKey && isset($testResults[$kostickKey]['scores'])) {
+            $ks = $testResults[$kostickKey]['scores'];
+            if (($ks['P'] ?? 0) >= 8) $alertasKostick[] = "P=" . $ks['P'] . ": Alta necesidad de control. Riesgo de autoritarismo o microgestión.";
+            if (($ks['P'] ?? 0) <= 2) $alertasKostick[] = "P=" . $ks['P'] . ": Baja necesidad de control. Dificultad para asumir responsabilidad sobre otros.";
+            if (($ks['I'] ?? 0) >= 8) $alertasKostick[] = "I=" . $ks['I'] . ": Impulsividad alta en la toma de decisiones.";
+            if (($ks['I'] ?? 0) <= 2) $alertasKostick[] = "I=" . $ks['I'] . ": Alta vacilación e indecisión en momentos críticos.";
+            if (($ks['L'] ?? 0) >= 8) $alertasKostick[] = "L=" . $ks['L'] . ": Deseo ostentoso de liderazgo o estatus.";
+            if (($ks['W'] ?? 0) >= 8) $alertasKostick[] = "W=" . $ks['W'] . ": Alta dependencia de reglas y supervisión directa.";
+        }
+        $candidateData['alertas_kostick'] = $alertasKostick;
+
+        // 5. Llamar a DeepSeek (pasamos el ajuste global de seguridad y el ajuste relativo protagonista)
+        $aiResponse = $deepSeek->generateReport($candidateData, $testResults, $competencias, $ajusteGlobal, $dictamenPHP, $ajusteRelativo);
 
         // Detectar si la IA devolvió un error
         $aiError = null;
         if ($aiResponse && isset($aiResponse['reporte']['resultado_global'])) {
             $aiResponse['reporte']['resultado_global']['dictamen'] = $dictamenPHP;
-            $aiResponse['reporte']['resultado_global']['apto'] = ($ajusteGlobal >= 70);
-            $aiResponse['reporte']['resultado_global']['porcentaje_ajuste'] = $ajusteGlobal;
+            $aiResponse['reporte']['resultado_global']['apto'] = ($ajusteRelativo >= 70);
+            $aiResponse['reporte']['resultado_global']['porcentaje_ajuste'] = $ajusteRelativo;
         }
 
         if (isset($aiResponse['__ai_error']) && $aiResponse['__ai_error'] === true) {
@@ -169,18 +189,93 @@ class GeneralReportService
             $aiResponse = null;
         }
 
-        return [
+        $result = [
             'consolidated' => $consolidated,
             'competencias' => $competencias,
             'cleaver_ideal' => $cleaverIdeal,
             'ai_report'    => $aiResponse,
             'ai_error'     => $aiError,
-            'ajuste_global'=> $ajusteGlobal,      // <-- AQUI PASAMOS EL 48.91%
-            'dictamen_calculado' => $dictamenPHP, // <-- AQUI PASAMOS EL "NO APTO"
+            'ajuste_global'=> $ajusteGlobal,      // Freno de seguridad (derailers)
+            'ajuste_relativo' => $ajusteRelativo, // Métrica protagonista del dictamen
+            'core_derailers' => $coreDerailers,
+            'alertas_kostick' => $alertasKostick,
+            'dictamen_calculado' => $dictamenPHP,
             'competencias_ideal' => $competenciasIdeal,
+            'puesto_original' => $puestoOriginal,
+            'puesto_evaluado' => $puestoNombre,
             'ai_raw'       => is_string($aiResponse) ? $aiResponse : json_encode($aiResponse, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
         ];
+
+        // Persistir el reporte como snapshot histórico si el evaluado es un Candidato.
+        if ($evaluable instanceof \App\Models\Candidate) {
+            $this->persistSnapshot($evaluable, $batchId, $result);
+        }
+
+        return $result;
     }
+
+    /**
+     * Guarda un reporte generado como registro histórico ligado al candidato,
+     * habilitando comparar reportes del mismo candidato contra distintos puestos
+     * sin depender del Cache temporal usado para la previsualización.
+     */
+    protected function persistSnapshot(\App\Models\Candidate $candidate, string $batchId, array $result): \App\Models\CandidateReportSnapshot
+    {
+        return \App\Models\CandidateReportSnapshot::create([
+            'candidate_id'            => $candidate->id,
+            'batch_id'                => $batchId,
+            'puesto_original'         => $result['puesto_original'] ?? null,
+            'puesto_evaluado'         => $result['puesto_evaluado'] ?? 'General',
+            'ajuste_global'           => $result['ajuste_global'] ?? null,
+            'ajuste_relativo'         => $result['ajuste_relativo'] ?? null,
+            'dictamen'                => $result['dictamen_calculado'] ?? null,
+            'competencias_json'       => $result['competencias'] ?? [],
+            'competencias_ideal_json' => $result['competencias_ideal'] ?? [],
+            'ai_report_json'          => $result['ai_report'] ?? null,
+            'cleaver_ideal_json'      => $result['cleaver_ideal'] ?? [],
+            'generated_by'            => auth()->id(),
+        ]);
+    }
+
+    /**
+     * Compara 2 o más snapshots de reporte del mismo candidato (por ejemplo,
+     * el mismo batch evaluado contra distintos puestos) para ayudar a decidir
+     * cuál perfil de puesto conviene más al candidato.
+     *
+     * @param int[] $snapshotIds
+     */
+    public function compareSnapshots(array $snapshotIds): array
+    {
+        $snapshots = \App\Models\CandidateReportSnapshot::whereIn('id', $snapshotIds)
+            ->orderBy('created_at')
+            ->get();
+
+        if ($snapshots->count() < 2) {
+            return ['error' => 'Se necesitan al menos 2 reportes para comparar.'];
+        }
+
+        // Índice de competencias por nombre para cada snapshot
+        $porCompetencia = [];
+        foreach ($snapshots as $snapshot) {
+            foreach (($snapshot->competencias_json ?? []) as $comp) {
+                $nombre = $comp['nombre'] ?? 'Desconocida';
+                $porCompetencia[$nombre][$snapshot->id] = $comp['puntaje'] ?? null;
+            }
+        }
+
+        return [
+            'snapshots' => $snapshots->map(fn ($s) => [
+                'id'              => $s->id,
+                'puesto_evaluado' => $s->puesto_evaluado,
+                'ajuste_global'   => $s->ajuste_global,
+                'ajuste_relativo' => $s->ajuste_relativo,
+                'dictamen'        => $s->dictamen,
+                'generated_at'    => $s->created_at,
+            ])->values()->toArray(),
+            'competencias' => $porCompetencia,
+        ];
+    }
+
 
     /**
      * Formatea segundos a string legible: "1h 23m 04s" o "12m 05s"

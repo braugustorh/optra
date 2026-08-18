@@ -57,8 +57,10 @@
         :meta="$meta"
         :reportKey="$reportKey"
         :ajusteGlobalPhp="$ajusteGlobalPhp"
+        :ajusteRelativoPhp="$ajusteRelativoPhp"
         :dictamenPhp="$dictamenPhp"
         :competenciasIdeal="$competenciasIdeal"
+        :isPdfExport="$isPdfExport ?? false"
     />
 @else
     {{-- ══════════════════════════════════════════════════════════════ --}}
@@ -72,7 +74,9 @@
         :meta="$meta"
         :reportKey="$reportKey"
         :ajusteGlobalPhp="$ajusteGlobalPhp"
+        :ajusteRelativoPhp="$ajusteRelativoPhp"
         :dictamenPhp="$dictamenPhp"
+        :isPdfExport="$isPdfExport ?? false"
     />
 @endif
 

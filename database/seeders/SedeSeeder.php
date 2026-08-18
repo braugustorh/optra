@@ -22,10 +22,10 @@ class SedeSeeder extends Seeder
                     'status' => 1,
                     'address' => null,
                     'phone' => null,
-                    'city' => null,
-                    'state' => null,
+                    'city' => '',
+                    'state' => '',
                     'cp' => null,
-                    'open_positions' => null,
+                    'open_positions' => 0,
                     'responsible' => null,
                     'card_id' => null,
                 ]

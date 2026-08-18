@@ -1,20 +1,32 @@
-@props(['reportData', 'candidateData', 'psychometricResults', 'competencias', 'cleaverIdeal' => ['D' => 50, 'I' => 50, 'S' => 50, 'C' => 50], 'meta', 'reportKey', 'ajusteGlobalPhp', 'dictamenPhp', 'competenciasIdeal'])
+@props(['reportData', 'candidateData', 'psychometricResults', 'competencias', 'cleaverIdeal' => ['D' => 50, 'I' => 50, 'S' => 50, 'C' => 50], 'meta', 'reportKey', 'ajusteGlobalPhp', 'ajusteRelativoPhp' => null, 'dictamenPhp', 'competenciasIdeal', 'isPdfExport' => false])
 @php
     $reporteBase = $reportData['reporte'] ?? $reportData;
 
-    // >>> CAMBIO CLAVE: Usamos PHP como fuente de verdad absoluta <<<
+    // >>> CAMBIO CLAVE v1.3: El Ajuste Relativo (% Cobertura del Perfil Ideal) es la
+    // métrica protagonista que conduce el dictamen. El Ajuste Global se conserva
+    // únicamente como bandera de seguridad (detección de descarriladores/derailers).
     $dictamen = $dictamenPhp;
-    $porcentajeAjuste = $ajusteGlobalPhp;
+    $porcentajeAjuste = $ajusteRelativoPhp ?? $ajusteGlobalPhp;
+    $ajusteGlobalSeguridad = $ajusteGlobalPhp;
+
+    // Offset del gauge pre-calculado en servidor (evita depender del timing de la
+    // animación JS al capturar el PDF/impresión, que causaba el gauge "vacío").
+    $gaugeRadius = 70;
+    $gaugeCircumference = 2 * M_PI * $gaugeRadius;
+    $gaugeOffset = $gaugeCircumference - (min(100, max(0, $porcentajeAjuste)) / 100) * $gaugeCircumference;
 
     // Variables de estilo dinámico
     $badgeStyle = 'badge-success';
     $badgeIcon = '<polyline points="20 6 9 17 4 12"></polyline>';
-    if (str_contains(strtolower($dictamen), 'no apto')) {
+    if (str_contains(strtolower($dictamen), 'no apto') || str_contains(strtolower($dictamen), 'no alineado')) {
         $badgeStyle = 'bg-red-50 text-red-700 border-red-200';
         $badgeIcon = '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>';
-    } elseif (str_contains(strtolower($dictamen), 'con plan')) {
+    } elseif (str_contains(strtolower($dictamen), 'con plan') || str_contains(strtolower($dictamen), 'latente')) {
         $badgeStyle = 'bg-yellow-50 text-yellow-700 border-yellow-200';
     }
+
+    // Bandera de seguridad: si el Ajuste Global se topó por un derailer, alertamos visualmente.
+    $derailerAlert = $ajusteGlobalSeguridad < $porcentajeAjuste - 5;
 
     $cleaverData = collect($psychometricResults)->first(fn($r) => stripos($r['prueba'], 'Cleaver') !== false);
     $cleaverScores = $cleaverData['resultados']['scores'] ?? ['D' => 0, 'I' => 0, 'S' => 0, 'C' => 0];
@@ -68,85 +80,126 @@
         .status-weak .competency-status-indicator { background-color: var(--red); color: white; }
         /* Impresión */
         @media print {
-            body { background: #ffffff !important; }
-            .card { box-shadow: none !important; border: 1px solid #cbd5e1 !important; page-break-inside: avoid; margin-bottom: 20px !important; }
+            :root {
+                --radius-lg: 12px;
+                --radius-md: 8px;
+            }
+            body { background: #ffffff !important; padding: 0 !important; }
+            .container { max-width: 100% !important; width: 100% !important; padding: 0 !important; margin: 0 !important; }
+            .report-font { font-size: 13px; line-height: 1.4; }
+            .card { box-shadow: none !important; border: 1px solid #e2e8f0 !important; page-break-inside: avoid; margin-bottom: 16px !important; }
+            .card-header { padding: 12px 20px !important; }
+            .card-body { padding: 20px !important; }
             .no-print { display: none !important; }
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+            h1 { font-size: 1.5rem !important; }
+            h2 { font-size: 1rem !important; }
+            .gauge-ring { width: 130px !important; height: 130px !important; }
+            .gauge-ring svg { width: 130px !important; height: 130px !important; }
         }
     </style>
 
     <div class="report-font">
         <!-- Header Principal -->
-        <header class="bg-white border text-left border-gray-200 rounded-2xl shadow-md p-8 mb-7 relative overflow-hidden">
+        <header class="bg-white border text-left border-gray-200 rounded-2xl shadow-sm p-6 print:p-5 mb-6 print:mb-4 relative overflow-hidden">
             <div class="absolute top-0 left-0 w-full h-1" style="background: linear-gradient(90deg, var(--blue), var(--green));"></div>
-            <div class="flex justify-between items-center flex-wrap gap-5">
+            <div class="flex justify-between items-center flex-wrap gap-4">
                 <div>
-                    <h1 class="text-2xl font-bold text-gray-900 tracking-tight m-0">Reporte Psicométrico por Competencias</h1>
-                    <p class="text-sm text-gray-500 font-medium mt-1">Modelo de Assessment Estratificado SEDYCO v1.1</p>
+                    <h1 class="text-xl print:text-lg font-bold text-gray-900 tracking-tight m-0">Reporte Psicométrico por Competencias</h1>
+                    <p class="text-xs text-gray-500 font-medium mt-0.5">Modelo de Assessment Estratificado SEDYCO v1.3</p>
                 </div>
-                <span class="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold border {{ $badgeStyle }}">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                <span class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold border {{ $badgeStyle }}">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
                         {!! $badgeIcon !!}
                     </svg>
                     {{ strtoupper($dictamen) }}
                 </span>
             </div>
 
-            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-5 mt-7 pt-6 border-t border-gray-100">
-                <div><label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Candidato</label><span class="text-sm font-medium text-gray-900">{{ $candidateData['name'] ?? 'N/A' }}</span></div>
-                <div><label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Puesto</label><span class="text-sm font-medium text-gray-900">{{ $candidateData['puesto'] ?? 'N/A' }}</span></div>
-                <div><label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Fecha</label><span class="text-sm font-medium text-gray-900">{{ \Carbon\Carbon::parse($meta['generado_en'] ?? now())->format('d / m / Y') }}</span></div>
-                <div class="col-span-2 md:col-span-4 lg:col-span-3"><label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Pruebas Aplicadas</label><span class="text-sm font-medium text-gray-900">{{ collect($psychometricResults)->pluck('prueba')->join(' · ') }}</span></div>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-3 mt-5 pt-5 border-t border-gray-100">
+                <div><label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Candidato</label><span class="text-sm font-semibold text-gray-900">{{ $candidateData['name'] ?? 'N/A' }}</span></div>
+                <div><label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Puesto</label><span class="text-sm font-semibold text-gray-900">{{ $candidateData['puesto'] ?? 'N/A' }}</span></div>
+                <div><label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Fecha</label><span class="text-sm font-semibold text-gray-900">{{ \Carbon\Carbon::parse($meta['generado_en'] ?? now())->format('d / m / Y') }}</span></div>
+                <div class="col-span-2 lg:col-span-3"><label class="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Pruebas Aplicadas</label><span class="text-sm font-semibold text-gray-900">{{ collect($psychometricResults)->pluck('prueba')->join(' · ') }}</span></div>
             </div>
         </header>
 
         <!-- Resumen Ejecutivo -->
-        <section class="card">
+        <section class="card break-inside-avoid">
             <div class="card-header">
                 <h2>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                     Resumen Ejecutivo
                 </h2>
             </div>
-            <div class="card-body">
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="lg:col-span-2 bg-[#f5f3ff] border-l-4 border-[#4f46e5] p-6 rounded-xl text-[15px] text-[#4338ca] leading-relaxed">
+            <div class="card-body py-5 px-6 print:py-4 print:px-5">
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                    <div class="lg:col-span-2 bg-[#f8fafc] border-l-4 border-[#4f46e5] p-5 rounded-xl text-[14px] text-gray-700 leading-relaxed">
                         {{ $reporteBase['resumen_ejecutivo'] ?? 'Sin resumen.' }}
                     </div>
-                    <div class="flex flex-col gap-3">
-                        <div class="p-3.5 rounded-xl text-sm font-medium flex items-start gap-2.5 border bg-[#f0fdfa] text-[#115e59] border-[#99f6e4]">
-                            <svg class="shrink-0 mt-0.5" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    <div class="flex flex-col gap-2.5">
+                        <div class="p-3 rounded-xl text-xs font-medium flex items-start gap-2 border bg-[#f0fdfa] text-[#115e59] border-[#99f6e4]">
+                            <svg class="shrink-0 mt-0.5" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
                             <div><strong>Fortaleza:</strong> {{ $reporteBase['fortaleza_principal'] ?? 'No definida' }}</div>
                         </div>
-                        <div class="p-3.5 rounded-xl text-sm font-medium flex items-start gap-2.5 border bg-[#fff1f2] text-[#9f1239] border-[#fecdd3]">
-                            <svg class="shrink-0 mt-0.5" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        <div class="p-3 rounded-xl text-xs font-medium flex items-start gap-2 border bg-[#fff1f2] text-[#9f1239] border-[#fecdd3]">
+                            <svg class="shrink-0 mt-0.5" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                             <div><strong>Brecha:</strong> {{ $reporteBase['brecha_principal'] ?? 'No definida' }}</div>
                         </div>
                     </div>
                 </div>
+
+                @if(!empty($reporteBase['entorno_optimo_sugerido']))
+                <div class="mt-4 print:mt-3 p-3.5 print:p-3 rounded-xl border flex items-start gap-3 bg-[#fffbeb] border-[#fde68a] text-[#92400e]">
+                    <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style="background-color:#fef3c7;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+                    </div>
+                    <div class="text-[13px] print:text-xs leading-relaxed">
+                        <strong class="block text-[10px] font-bold uppercase tracking-wider mb-0.5 text-[#b45309]">Entorno Óptimo Sugerido</strong>
+                        {{ $reporteBase['entorno_optimo_sugerido'] }}
+                    </div>
+                </div>
+                @endif
             </div>
         </section>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <!-- Ajuste Global -->
-            <section class="card !mb-0 h-full flex flex-col">
-                <div class="card-header">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 print:gap-4 mb-6 print:mb-4">
+            <!-- Ajuste al Puesto (Ajuste Relativo protagonista) -->
+            <section class="card !mb-0 h-full flex flex-col break-inside-avoid">
+                <div class="card-header py-4 px-6 print:py-3 print:px-5">
                     <h2>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
-                        Ajuste Global al Puesto
+                        Ajuste al Puesto <span class="text-xs font-normal text-gray-400">(Cobertura)</span>
                     </h2>
                 </div>
-                <div class="card-body flex-1 flex flex-col items-center justify-center gap-6">
+                <div class="card-body flex-1 flex flex-col items-center justify-center gap-5 print:gap-3 px-6 py-5 print:px-5 print:py-4">
                     <div class="gauge-ring">
                         <svg viewBox="0 0 160 160">
                             <circle class="bg" cx="80" cy="80" r="70" />
-                            <circle class="progress" cx="80" cy="80" r="70" id="gaugeProgress" />
+                            <circle class="progress" cx="80" cy="80" r="70" id="gaugeProgress"
+                                    style="stroke-dashoffset: {{ $gaugeOffset }};" />
                         </svg>
                         <div class="gauge-center">
-                            <span class="text-4xl font-bold text-gray-900 tracking-tighter">{{ $porcentajeAjuste }}%</span>
-                            <span class="text-xs font-bold text-gray-500 uppercase tracking-widest mt-1">Ajuste</span>
+                            <span class="text-3xl print:text-2xl font-bold text-gray-900 tracking-tighter">{{ $porcentajeAjuste }}%</span>
+                            <span class="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Ajuste</span>
                         </div>
                     </div>
+
+                    {{-- Bandera de Ajuste Global (freno de seguridad) --}}
+                    <div class="w-full flex items-center gap-2 px-3 py-2 rounded-xl border {{ $derailerAlert ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200' }}">
+                        <div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 {{ $derailerAlert ? 'bg-amber-100 text-amber-600' : 'bg-slate-200 text-slate-500' }}">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center justify-between gap-1">
+                                <span class="text-[10px] font-bold text-gray-600 uppercase tracking-wide">🛡️ Ajuste Global</span>
+                                <span class="text-xs font-bold {{ $derailerAlert ? 'text-amber-700' : 'text-gray-700' }}">{{ $ajusteGlobalSeguridad }}%</span>
+                            </div>
+                            <p class="text-[11px] text-gray-400 leading-snug mt-0.5">Referencia de consistencia interna. Solo actúa como freno ante descarriladores críticos; no sustituye al Ajuste Relativo.</p>
+                        </div>
+                    </div>
+
                     @php
                         // Contadores para Competencias Requeridas
                         $reqFuertes = collect($competencias)->where('requerida', true)->where('nivel', 'strong')->count();
@@ -159,26 +212,26 @@
                         $adMod = collect($competencias)->where('requerida', false)->where('nivel', 'moderate')->count();
                         $adDeb = collect($competencias)->where('requerida', false)->where('nivel', 'weak')->count();
                     @endphp
-                    <div class="w-full border-t border-gray-100 pt-4 flex flex-col gap-2">
-                        <div class="flex justify-between items-center text-sm">
+                    <div class="w-full border-t border-gray-100 pt-3 print:pt-2 flex flex-col gap-1.5 print:gap-1">
+                        <div class="flex justify-between items-center text-xs">
                             <span class="text-gray-500 font-medium">Nivel de Ajuste</span>
                             <span class="font-bold text-gray-900">{{ $reporteBase['resultado_global']['nivel_ajuste'] ?? 'No definido' }}</span>
                         </div>
-                        <div class="flex justify-between items-center text-sm">
-                            <span class="text-gray-500 font-medium">Fuertes (Req)</span>
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-gray-500 font-medium">Sólida (Req)</span>
                             <span class="font-bold text-teal-600">{{ $reqFuertes }}</span>
                         </div>
-                        <div class="flex justify-between items-center text-sm">
-                            <span class="text-gray-500 font-medium">Moderadas (Req)</span>
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-gray-500 font-medium">En Desarrollo (Req)</span>
                             <span class="font-bold text-amber-600">{{ $reqMod }}</span>
                         </div>
-                        <div class="flex justify-between items-center text-sm">
-                            <span class="text-gray-500 font-medium">Débiles (Req)</span>
+                        <div class="flex justify-between items-center text-xs">
+                            <span class="text-gray-500 font-medium">Por Desarrollar (Req)</span>
                             <span class="font-bold text-rose-600">{{ $reqDeb }}</span>
                         </div>
 
-                        <div class="pt-2 mt-1 border-t border-dashed border-gray-200/70 flex flex-col gap-1.5">
-                            <div class="flex justify-between items-center text-sm">
+                        <div class="pt-1.5 mt-0.5 border-t border-dashed border-gray-200/70 flex flex-col gap-1">
+                            <div class="flex justify-between items-center text-[11px]">
                                 <span class="text-gray-400 font-medium">Competencias Complementarias</span>
                                 <span class="font-bold text-gray-400">{{ $adicionales }}</span>
                             </div>
@@ -208,55 +261,55 @@
             </section>
 
             <!-- Radar Cleaver -->
-            <section class="card !mb-0 h-full flex flex-col">
-                <div class="card-header">
+            <section class="card !mb-0 h-full flex flex-col break-inside-avoid">
+                <div class="card-header py-4 px-6 print:py-3 print:px-5">
                     <h2>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
                         Alineación de Competencias
                     </h2>
                 </div>
-                <div class="card-body flex-1 flex flex-col items-center justify-center">
-                    <div class="relative w-full max-w-[300px] aspect-square mx-auto">
+                <div class="card-body flex-1 flex flex-col items-center justify-center px-6 py-5 print:px-5 print:py-4">
+                    <div class="relative w-full max-w-[280px] print:max-w-[240px] aspect-square mx-auto">
                         <canvas id="radarChart"></canvas>
                     </div>
-                    <div class="flex justify-center gap-4 flex-wrap mt-4 text-xs font-medium text-gray-500">
-                        <div class="flex items-center gap-1.5"><div class="w-4 h-1 rounded-full bg-[#4f46e5]"></div><span>Ideal SEDYCO</span></div>
-                        <div class="flex items-center gap-1.5"><div class="w-4 h-1 rounded-full bg-[#0d9488]"></div><span>Candidato</span></div>
+                    <div class="flex justify-center gap-4 flex-wrap mt-3 text-[10px] font-semibold text-gray-400">
+                        <div class="flex items-center gap-1.5"><div class="w-3 h-1 rounded-full bg-[#4f46e5]"></div><span>Ideal</span></div>
+                        <div class="flex items-center gap-1.5"><div class="w-3 h-1 rounded-full bg-[#0d9488]"></div><span>Candidato</span></div>
                     </div>
                 </div>
             </section>
         </div>
 
         <!-- Semáforo de Competencias -->
-        <section class="card">
-            <div class="card-header">
+        <section class="card break-inside-avoid">
+            <div class="card-header py-4 px-6 print:py-3 print:px-5">
                 <h2>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><circle cx="12" cy="7" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="17" r="2"></circle></svg>
                     Semáforo de Competencias
                 </h2>
             </div>
-            <div class="card-body">
-                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 items-stretch">
+            <div class="card-body p-6 print:p-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 print:grid-cols-3 gap-3 print:gap-2 items-stretch">
                     @foreach($competencias as $comp)
-                        <div class="competency-card status-{{ $comp['nivel'] }}">
-                            <div class="flex items-center gap-3">
-                                <div class="competency-icon">{{ $comp['icono'] }}</div>
-                                <div class="flex flex-col">
-                                    <span class="text-sm font-bold text-gray-900 leading-tight mb-1">{{ $comp['nombre'] }}</span>
-                                    <div class="flex items-center gap-2">
-                                        <span class="competency-level text-xs font-semibold">{{ $comp['etiqueta'] }}</span>
+                        <div class="competency-card status-{{ $comp['nivel'] }} flex items-center justify-between p-3 print:p-2.5 !rounded-xl">
+                            <div class="flex items-center gap-2.5 flex-1 min-w-0">
+                                <div class="competency-icon shrink-0 w-8 h-8 !text-lg">{{ $comp['icono'] }}</div>
+                                <div class="flex flex-col flex-1 min-w-0">
+                                    <span class="text-xs font-bold text-gray-900 leading-tight truncate">{{ $comp['nombre'] }}</span>
+                                    <div class="flex items-center gap-1">
+                                        <span class="competency-level text-[10px] font-semibold whitespace-nowrap">{{ $comp['etiqueta'] }}</span>
                                         @if(!$comp['requerida'])
-                                            <span class="bg-white/50 text-gray-400 text-[8px] font-bold px-1.5 py-0.5 rounded border border-gray-100 uppercase tracking-wider">
-                                                Complementaria
+                                            <span class="text-gray-400 text-[7px] font-bold uppercase tracking-wider whitespace-nowrap opacity-70">
+                                                Opt.
                                             </span>
                                         @endif
                                     </div>
                                 </div>
                             </div>
-                            <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style="background-color: var(--{{ $comp['nivel'] === 'strong' ? 'green' : ($comp['nivel'] === 'moderate' ? 'yellow' : 'red') }}); color: white;">
-                                @if($comp['nivel'] === 'strong') <svg viewBox="0 0 24 24" width="14" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                                @elseif($comp['nivel'] === 'moderate') <svg viewBox="0 0 24 24" width="14" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                                @else <svg viewBox="0 0 24 24" width="14" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            <div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 ml-1.5" style="background-color: var(--{{ $comp['nivel'] === 'strong' ? 'green' : ($comp['nivel'] === 'moderate' ? 'yellow' : 'red') }}); color: white;">
+                                @if($comp['nivel'] === 'strong') <svg viewBox="0 0 24 24" width="12" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                @elseif($comp['nivel'] === 'moderate') <svg viewBox="0 0 24 24" width="12" fill="none" stroke="currentColor" stroke-width="3"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                @else <svg viewBox="0 0 24 24" width="12" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                                 @endif
                             </div>
                         </div>
@@ -267,126 +320,145 @@
 
         <!-- Plan de Desarrollo 90 días -->
         @if(!empty($reporteBase['plan_desarrollo']))
-            <section class="card break-inside-avoid">
-                <div class="card-header">
-                    <h2>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-                        Plan de Desarrollo Recomendado — 90 Días
-                    </h2>
-                </div>
-                <div class="card-body">
-                    <div class="flex flex-col gap-3.5">
-                        @foreach($reporteBase['plan_desarrollo'] as $plan)
-                            @php
-                                $pColor = $plan['prioridad'] === 'critical' ? 'var(--red)' : ($plan['prioridad'] === 'important' ? 'var(--yellow)' : 'var(--blue)');
-                                $pBgBox = $plan['prioridad'] === 'critical' ? 'rgba(254, 242, 242, 0.4)' : ($plan['prioridad'] === 'important' ? 'rgba(255, 251, 235, 0.4)' : 'rgba(245, 243, 255, 0.4)');
-                                $pBgIcon = $plan['prioridad'] === 'critical' ? '#fee2e2' : ($plan['prioridad'] === 'important' ? '#fef3c7' : '#e0e7ff');
-                            @endphp
-                            <div class="flex items-start gap-4 p-5 rounded-xl border border-gray-200 bg-white transition hover:border-gray-300" style="border-left: 4px solid {{ $pColor }}; background-color: {{ $pBgBox }};">
-                                <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style="background-color: {{ $pBgIcon }}; color: {{ $pColor }};">
-                                    @if($plan['prioridad'] === 'critical')
-                                        <svg viewBox="0 0 24 24" width="18" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                                    @else
-                                        <svg viewBox="0 0 24 24" width="18" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
-                                    @endif
-                                </div>
-                                <div class="flex-1">
-                                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2 mb-1.5">
-                                        <h4 class="text-[15px] font-bold text-gray-900">{{ $plan['titulo'] }}</h4>
-                                        <span class="text-xs font-bold text-gray-500 bg-gray-100 px-2.5 py-1 rounded-full whitespace-nowrap">{{ $plan['periodo'] }}</span>
-                                    </div>
-                                    <p class="text-sm text-gray-600 leading-relaxed">{{ $plan['descripcion'] }}</p>
-                                </div>
+        <section class="card break-inside-avoid">
+            <div class="card-header py-4 px-6 print:py-3 print:px-5">
+                <h2>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    Plan de Desarrollo Recomendado — 90 Días
+                </h2>
+            </div>
+            <div class="card-body p-6 print:p-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 print:grid-cols-2 gap-4 print:gap-3">
+                    @foreach($reporteBase['plan_desarrollo'] as $plan)
+                        @php
+                            $pColor = $plan['prioridad'] === 'critical' ? 'var(--red)' : ($plan['prioridad'] === 'important' ? 'var(--yellow)' : 'var(--blue)');
+                            $pBgBox = $plan['prioridad'] === 'critical' ? 'rgba(254, 242, 242, 0.4)' : ($plan['prioridad'] === 'important' ? 'rgba(255, 251, 235, 0.4)' : 'rgba(245, 243, 255, 0.4)');
+                            $pBgIcon = $plan['prioridad'] === 'critical' ? '#fee2e2' : ($plan['prioridad'] === 'important' ? '#fef3c7' : '#e0e7ff');
+                        @endphp
+                        <div class="flex items-start gap-3 p-4 rounded-xl border border-gray-100 bg-white shadow-sm break-inside-avoid" style="border-left: 4px solid {{ $pColor }}; background-color: {{ $pBgBox }};">
+                            <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style="background-color: {{ $pBgIcon }}; color: {{ $pColor }};">
+                                @if($plan['prioridad'] === 'critical')
+                                    <svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                                @else
+                                    <svg viewBox="0 0 24 24" width="16" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+                                @endif
                             </div>
-                        @endforeach
-                    </div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex justify-between items-start gap-2 mb-1">
+                                    <h4 class="text-xs font-bold text-gray-900 leading-tight">{{ $plan['titulo'] }}</h4>
+                                    <span class="text-[9px] font-bold text-gray-400 bg-white/50 px-2 py-0.5 rounded border border-gray-100 whitespace-nowrap">{{ $plan['periodo'] }}</span>
+                                </div>
+                                <p class="text-[11px] text-gray-600 leading-snug">{{ $plan['descripcion'] }}</p>
+                            </div>
+                        </div>
+                    @endforeach
                 </div>
-            </section>
+            </div>
+        </section>
         @endif
 
         <!-- Footer -->
-        <footer class="grid grid-cols-2 md:grid-cols-4 gap-5 pt-6 border-t border-gray-200 mt-10 text-xs text-gray-500 mb-6">
-            <div><label class="block font-bold text-gray-900 mb-1">Modelo</label>SEDYCO v1.2</div>
-            <div><label class="block font-bold text-gray-900 mb-1">Próxima Revisión</label>{{ \Carbon\Carbon::parse($meta['generado_en'] ?? now())->addYear()->format('d / m / Y') }}</div>
-            <div class="col-span-2 text-center text-gray-400 font-medium">Documento confidencial — Propiedad exclusiva</div>
+        <footer class="grid grid-cols-2 md:grid-cols-4 gap-5 pt-5 border-t border-gray-100 mt-8 print:mt-6 text-[10px] text-gray-400 mb-6">
+            <div><label class="block font-bold text-gray-700 mb-0.5">Modelo</label>SEDYCO v1.3</div>
+            <div><label class="block font-bold text-gray-700 mb-0.5">Próxima Revisión</label>{{ \Carbon\Carbon::parse($meta['generado_en'] ?? now())->addYear()->format('d / m / Y') }}</div>
+            <div class="col-span-2 text-right text-gray-300 font-medium self-end">Documento confidencial — Propiedad exclusiva</div>
         </footer>
     </div>
 
+    {{-- Marcador que PDFShift espera (wait_for) antes de capturar: garantiza que
+         Tailwind (CDN JIT) y Chart.js ya terminaron de pintar el layout. --}}
+    <span id="report-ready-flag" data-report-ready="false" style="display:none;"></span>
+
     <!-- Scripts de Vista -->
     <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            // Animación Gauge
-            const progressCircle = document.getElementById('gaugeProgress');
-            if (progressCircle) {
-                const percentage = {{ $porcentajeAjuste }};
-                const radius = 70;
-                const circumference = 2 * Math.PI * radius;
-                const offset = circumference - (percentage / 100) * circumference;
-                setTimeout(() => { progressCircle.style.strokeDashoffset = offset; }, 100);
-            }
+    document.addEventListener("DOMContentLoaded", function() {
+        const isPdfExport = {{ $isPdfExport ? 'true' : 'false' }};
+        const readyFlag = document.getElementById('report-ready-flag');
+        const markReady = () => readyFlag?.setAttribute('data-report-ready', 'true');
 
-            // Radar Cleaver
-            // Radar Cleaver
-            const ctx = document.getElementById('radarChart')?.getContext('2d');
-            if(ctx) {
-                const rawCompetencias = @json($competencias);
-                const idealProfile = @json($competenciasIdeal ?? []);
+        // Animación Gauge (el offset ya viene pre-calculado desde PHP para que el
+        // PDF/impresión muestre el valor correcto aunque la animación no corra).
+        const progressCircle = document.getElementById('gaugeProgress');
+        if (progressCircle && !isPdfExport) {
+            const percentage = {{ $porcentajeAjuste }};
+            const radius = 70;
+            const circumference = 2 * Math.PI * radius;
+            const offset = circumference - (percentage / 100) * circumference;
+            progressCircle.style.strokeDashoffset = circumference; // parte vacío
+            setTimeout(() => { progressCircle.style.strokeDashoffset = offset; }, 100);
+        }
 
-                // Ordenar para que las requeridas salgan primero juntas, luego las adicionales
-                const sorted = [...rawCompetencias].sort((a, b) => (a.requerida === b.requerida) ? 0 : a.requerida ? -1 : 1);
+        // Radar Cleaver
+        const ctx = document.getElementById('radarChart')?.getContext('2d');
+        if(ctx) {
+            const rawCompetencias = @json($competencias);
+            const idealProfile = @json($competenciasIdeal ?? []);
 
-                const labels = sorted.map(c => c.nombre);
-                const candidateData = sorted.map(c => c.puntaje);
-                const idealData = labels.map(label => idealProfile[label] || 70);
+            // Ordenar para que las requeridas salgan primero juntas, luego las adicionales
+            const sorted = [...rawCompetencias].sort((a, b) => (a.requerida === b.requerida) ? 0 : a.requerida ? -1 : 1);
 
-                new Chart(ctx, {
-                    type: 'radar',
-                    data: {
-                        labels: labels,
-                        datasets: [
-                            {
-                                label: 'Ideal SEDYCO',
-                                data: idealData,
-                                backgroundColor: 'rgba(79, 70, 229, 0.08)',
-                                borderColor: '#4f46e5',
-                                borderWidth: 2,
-                                borderDash: [6, 4],
-                                pointBackgroundColor: '#4f46e5',
-                            },
-                            {
-                                label: 'Candidato',
-                                data: candidateData,
-                                backgroundColor: 'rgba(13, 148, 136, 0.20)',
-                                borderColor: '#0d9488',
-                                borderWidth: 2,
-                                pointBackgroundColor: '#0d9488',
-                            }
-                        ]
+            const labels = sorted.map(c => c.nombre);
+            const candidateData = sorted.map(c => c.puntaje);
+            const idealData = labels.map(label => idealProfile[label] || 70);
+
+            new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Ideal SEDYCO',
+                            data: idealData,
+                            backgroundColor: 'rgba(79, 70, 229, 0.08)',
+                            borderColor: '#4f46e5',
+                            borderWidth: 2,
+                            borderDash: [6, 4],
+                            pointBackgroundColor: '#4f46e5',
+                        },
+                        {
+                            label: 'Candidato',
+                            data: candidateData,
+                            backgroundColor: 'rgba(13, 148, 136, 0.20)',
+                            borderColor: '#0d9488',
+                            borderWidth: 2,
+                            pointBackgroundColor: '#0d9488',
+                        }
+                    ]
+                },
+                options: {
+                    // En exportación a PDF desactivamos animación y el modo responsive
+                    // (que depende de ResizeObserver) para evitar canvases en blanco o
+                    // recortados cuando el headless browser captura la página.
+                    responsive: !isPdfExport,
+                    maintainAspectRatio: true,
+                    animation: isPdfExport ? false : { duration: 800 },
+                    plugins: {
+                        legend: { display: false },
+                        ...(isPdfExport ? {} : {}),
                     },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: true,
-                        plugins: { legend: { display: false } },
-                        scales: {
-                            r: {
-                                beginAtZero: true,
-                                min: 0,
-                                max: 100,
-                                ticks: { display: false },
-                                pointLabels: {
-                                    font: { size: 9, family: 'Inter' },
-                                    color: (context) => {
-                                        // CORRECCIÓN AQUÍ
-                                        const index = context.index;
-                                        const comp = sorted[index];
-                                        return (comp && comp.requerida === false) ? '#94a3b8' : '#475569';
-                                    }
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            min: 0,
+                            max: 100,
+                            ticks: { display: false },
+                            pointLabels: {
+                                font: { size: isPdfExport ? 8 : 9, family: 'Inter', weight: '600' },
+                                color: (context) => {
+                                    // CORRECCIÓN AQUÍ
+                                    const index = context.index;
+                                    const comp = sorted[index];
+                                    return (comp && comp.requerida === false) ? '#94a3b8' : '#475569';
                                 }
                             }
                         }
                     }
-                });
-            }
-        });
+                }
+            });
+        }
+
+        // Señal de "listo" para PDFShift (wait_for). Si no hay canvas, marcamos de inmediato.
+        markReady();
+    });
     </script>
 </div>

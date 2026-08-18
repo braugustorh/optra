@@ -21,15 +21,15 @@ class DeepSeekService
      * @param array $testResults    Resultados de las pruebas aplicadas
      * @return array                Reporte estructurado o array con clave '__ai_error'
      */
-    public function generateReport(array $candidateData, array $testResults, array $competencias = [], float $ajusteGlobal = 0.0, string $dictamen = ''): array
+    public function generateReport(array $candidateData, array $testResults, array $competencias = [], float $ajusteGlobal = 0.0, string $dictamen = '', float $ajusteRelativo = 0.0): array
     {
         $puesto = $candidateData['puesto'] ?? 'General';
 
         // Generar una semilla determinista a partir de los resultados + puesto.
         $deterministicSeed = abs(crc32(json_encode($testResults) . $puesto));
 
-        // Pasamos el ajuste global al constructor del prompt
-        $prompt = $this->buildUserPrompt($candidateData, $testResults, $puesto, $competencias, $ajusteGlobal,$dictamen);
+        // Pasamos el ajuste relativo (protagonista) y el ajuste global (seguridad) al constructor del prompt
+        $prompt = $this->buildUserPrompt($candidateData, $testResults, $puesto, $competencias, $ajusteGlobal, $dictamen, $ajusteRelativo);
 
         try {
             $queryBuilder = $this->deepseek
@@ -45,8 +45,15 @@ class DeepSeekService
                     ->addParameter('response_format', ['type' => 'json_object']);
                 // top_p no es necesario con temperature=0, se omite.
             }
+            \Illuminate\Support\Facades\Log::info('[DEEPSEEK-PAYLOAD]', [
+                'candidateData' => $candidateData,
+                'testResults'   => $testResults,
+                'competencias'  => $competencias,
+                'prompt'        => $prompt,
+            ]);
             file_put_contents(
                 storage_path('logs/deepseek_payload_debug.json'),
+
                 json_encode([
                     'candidateData' => $candidateData,
                     'testResults'   => $testResults,
@@ -111,6 +118,10 @@ class DeepSeekService
      * System prompt estático que contiene TODAS las reglas, teoría y formato de salida.
      * Al ser inmutable, el modelo lo procesa con alta consistencia.
      */
+    /**
+     * System prompt estático que contiene TODAS las reglas, teoría y formato de salida.
+     * Al ser inmutable, el modelo lo procesa con alta consistencia.
+     */
     protected function getSystemPrompt(): string
     {
         return <<<PROMPT
@@ -122,38 +133,45 @@ INFORMACIÓN DEL SISTEMA (HECHOS INMUTABLES):
 2. El dictamen final asignado por el sistema es: "{dictamen_php}"
 Tu trabajo NO es calcular el dictamen, sino REDACTAR la justificación clínica congruente con este resultado.
 
-REGLAS GLOBALES Y CALIBRACIÓN CULTURAL:
+REGLAS GLOBALES, CALIBRACIÓN CULTURAL Y DE INDUSTRIA:
 1. Contexto México: La alta distancia jerárquica puede suprimir la Dominancia (D) en Cleaver. La Constancia (S) y Cumplimiento (C) suelen ser altas por evitación de incertidumbre.
-2. PRUEBAS OPCIONALES (MUY IMPORTANTE): Las pruebas Kostick, Moss y Moss Wess son opcionales para niveles Supervisores y Administrativos. Si en el JSON de entrada NO aparecen estas pruebas, ignóralas por completo. Basa tu análisis clínico y brechas estrictamente en las pruebas provistas y en las 'competencias_precalculadas'. NO menciones en el reporte que "faltan pruebas" ni penalices al candidato.
+2. Contexto Operativo (Administradora de Centrales (No choferes, no taquillas)): El talento evaluado opera en empresas de logística, mantenimiento, atención masiva en piso y gerencias de terminal. Aterriza tu lenguaje y planes de desarrollo a esta realidad.
+3. Tono Constructivo (Growth Mindset): Evita lenguaje punitivo o destructivo.
+4. REGLA ESTRICTA DE PLAN DE DESARROLLO: ÚNICAMENTE debes generar elementos en el "plan_desarrollo" para las competencias que cumplan estas DOS condiciones juntas en el JSON de entrada:
+   a) Que "requerida" sea true.
+   b) Que su "nivel" o "etiqueta" indique oportunidad ("Por Desarrollar", "Funcional", "En Desarrollo", "Latente", "weak", "moderate").
+   ESTÁ ESTRICTAMENTE PROHIBIDO inventar competencias o sugerir planes para competencias "Consolidadas", "Fuertes" o "Complementarias". Si el candidato es perfecto y no tiene brechas, devuelve un arreglo vacío [].
 
 FORMATO DE SALIDA OBLIGATORIO (sin markdown, solo JSON puro):
 {
     "pasos_de_razonamiento": {
-        "1_analisis_de_competencias_criticas": "Análisis de las brechas en las competencias con mayor peso global.",
-        "2_justificacion_del_dictamen": "Explicación de por qué el perfil coincide con el dictamen de {dictamen_php}."
+        "1_analisis_de_competencias_criticas": "Análisis de las áreas fuertes y de oportunidad en las competencias requeridas.",
+        "2_justificacion_del_dictamen": "Explicación de por qué el perfil coincide con el dictamen de '{dictamen_php}'.",
+        "3_identificacion_entorno_optimo": "Evaluación independiente de en qué dinámica operativa brillaría el candidato."
     },
     "reporte": {
         "resultado_global": {
             "nivel_ajuste": "Alto | Medio | Bajo | Insuficiente"
         },
-        "resumen_ejecutivo": "string (máx 100 palabras detallando ajuste cognitivo y conductual)",
-        "fortaleza_principal": "string (1 frase, ej: Alta capacidad organizacional y enfoque)",
-        "brecha_principal": "string (1 frase, ej: Disposición de servicio requiere desarrollo)",
+        "resumen_ejecutivo": "string (máx 120 palabras. Céntrate en fortalezas operativas. OMITE dictámenes finales.)",
+        "fortaleza_principal": "string (1 frase enfocada a la operación)",
+        "brecha_principal": "string (1 frase propositiva sobre la principal competencia requerida baja)",
+        "entorno_optimo_sugerido": "string (máx 50 palabras indicando áreas ideales en la central o corporativo)",
         "plan_desarrollo": [
             {
                 "prioridad": "critical|important|normal",
-                "titulo": "string (ej: Disposición de Servicio — Nivel Débil)",
-                "descripcion": "string (Acción recomendada, max 2 oraciones)",
+                "titulo": "string (Usa el nombre exacto y etiqueta de la competencia real del JSON, ej: 'Organización — En Desarrollo')",
+                "descripcion": "string (Acción recomendada táctica y aplicable, max 2 oraciones)",
                 "periodo": "0 - 30 días | 30 - 60 días | 60 - 90 días"
             }
         ],
-        "notas_adicionales": "string (solo si hay alertas clínicas)"
+        "notas_adicionales": "string (solo si hay alertas operativas)"
     }
 }
 PROMPT;
     }
 
-    protected function buildUserPrompt(array $candidateData, array $testResults, string $puesto, array $competencias = [], float $ajusteGlobal = 0.0, string $dictamen = ''): string
+    protected function buildUserPrompt(array $candidateData, array $testResults, string $puesto, array $competencias = [], float $ajusteGlobal = 0.0, string $dictamen = '', float $ajusteRelativo = 0.0): string
     {
         $jsonEntrada = [
             'candidato' => [
@@ -161,8 +179,10 @@ PROMPT;
                 'puesto' => $puesto,
                 'fecha_evaluacion' => date('Y-m-d'),
                 // >>> INYECCIÓN CLAVE: El modelo usará esto como verdad absoluta <<<
-                'ajuste_global_calculado' => $ajusteGlobal,
-                'dictamen_asignado'=>$dictamen,
+                'ajuste_relativo_calculado' => $ajusteRelativo,
+                'ajuste_global_seguridad' => $ajusteGlobal,
+                'dictamen_asignado' => $dictamen,
+                'alertas_conductuales_kostick' => $candidateData['alertas_kostick'] ?? [],
             ],
             'pruebas' => $testResults,
             'competencias_precalculadas' => $competencias
@@ -175,13 +195,17 @@ PROMPT;
             'target_perfil_sedyco'  => $reglasSedyco
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 
-        return "Realiza el reporte clínico basado en la siguiente información. IMPORTANTE: El sistema ya ha determinado que el ajuste es {$ajusteGlobal}% y el dictamen es '{$dictamen}'. Tu único trabajo es REDACTAR la justificación clínica y el plan de desarrollo congruentes con este dictamen:\n\n" . $payload;
+        return "Realiza el reporte clínico basado en la siguiente información. IMPORTANTE: El sistema ya ha determinado que el Ajuste Relativo (Cobertura del Perfil Ideal) es {$ajusteRelativo}% (métrica oficial que rige el dictamen), con un Ajuste Global de referencia de seguridad de {$ajusteGlobal}%, y el dictamen es '{$dictamen}'. Tu único trabajo es REDACTAR la justificación clínica y el plan de desarrollo congruentes con este dictamen:\n\n" . $payload;
 
 
     }
 
     /**
      * Mapea las directrices del manual SEDYCO v1.1 a arrays estructurados según el nivel jerárquico.
+     */
+    /**
+     * Mapea las directrices del manual SEDYCO v1.1 a arrays estructurados según el nivel jerárquico.
+     * CALIBRADO PARA SECTOR LOGÍSTICO / CENTRALES DE AUTOBUSES
      */
     private function getSedycoProfile(string $nivel): array
     {
@@ -190,64 +214,58 @@ PROMPT;
 
         return match ($nivelNormalizado) {
             'DIRECTIVO' => [
-                'perfil' => 'Directivo',
-                'Terman' => 'CI 115-130+ (Corte: 110 con compensación)',
-                'Cleaver' => ['D' => '70-85%', 'I' => '50-65%', 'S' => '25-40%', 'C' => '45-60%'],
-                'Kostick' => ['G' => '5-7', 'L' => '6-8', 'A' => '6-8', 'P' => '4-6', 'N' => '4-6', 'T' => '5-7'],
-                'Moss' => ['Supervision' => '75-90%', 'Decision' => '70-85%', 'Evaluacion' => '75-90%', 'Relaciones' => '65-80%', 'Sentido_Comun' => '70-85%'],
-                // Evaluamos las Dimensiones principales y la innovación
-                'Moss_Wess' => ['Relaciones' => 'Promedio/Buena', 'Auto-realización' => 'Promedio/Buena', 'INNOVACION' => 'Promedio/Buena']
+                'perfil' => 'Directivo (Dirección General / Área / Subdirección)',
+                'Terman' => 'CI 105-125 (Fuerte en Juicio, Planeación y Negociación)',
+                'Cleaver' => ['D' => '65-80%', 'I' => '60-75%', 'S' => '30-45%', 'C' => '50-65%'],
+                'Kostick' => ['G' => '5-7', 'L' => '6-8', 'A' => '6-8', 'P' => '5-7', 'T' => '5-7'],
+                'Moss' => ['Supervision' => '70-85%', 'Decision' => '75-90%', 'Evaluacion' => '70-85%', 'Relaciones' => '70-85%', 'Sentido_Comun' => '75-90%']
+            ],
+            'GERENCIA' => [
+                'perfil' => 'Gerencia Corporativa / Coordinación Senior',
+                'Terman' => 'CI 100-120 (Equilibrio analítico y ejecución táctica)',
+                'Cleaver' => ['D' => '60-75%', 'I' => '55-70%', 'S' => '40-55%', 'C' => '55-70%'],
+                'Kostick' => ['G' => '5-7', 'L' => '5-7', 'A' => '6-8', 'P' => '4-6', 'T' => '5-7'],
+                'Moss' => ['Supervision' => '65-80%', 'Decision' => '70-85%', 'Evaluacion' => '65-80%', 'Relaciones' => '65-80%', 'Sentido_Comun' => '70-85%']
             ],
             'MANDO_MEDIO' => [
-                'perfil' => 'Mando Medio',
-                'Terman' => 'CI 105-120 (Corte: 100)',
-                'Cleaver' => ['D' => '50-65%', 'I' => '55-70%', 'S' => '45-60%', 'C' => '50-65%'],
-                'Kostick' => ['G' => '4-6', 'L' => '5-7', 'N' => '5-7', 'A' => '5-7', 'S' => '5-7', 'C' => '4-6'],
-                'Moss' => ['Supervision' => '65-80%', 'Decision' => '60-75%', 'Evaluacion' => '65-80%', 'Relaciones' => '65-80%', 'Sentido_Comun' => '65-75%'],
-                // Mapeado a la dimensión "Relaciones" y a la subescala "APOYO"
-                'Moss_Wess' => ['APOYO' => 'Promedio/Buena (CRÍTICO)', 'Relaciones' => 'Promedio/Buena']
+                'perfil' => 'Mando Medio (Gerencias B, Jefaturas)',
+                'Terman' => 'CI 95-115 (Fuerte en Organización y Análisis operativo)',
+                'Cleaver' => ['D' => '55-70%', 'I' => '50-65%', 'S' => '45-60%', 'C' => '60-75%'],
+                'Kostick' => ['G' => '5-7', 'L' => '5-7', 'N' => '6-8', 'A' => '5-7', 'S' => '5-7', 'C' => '5-7'],
+                'Moss' => ['Supervision' => '65-80%', 'Decision' => '60-75%', 'Evaluacion' => '65-80%', 'Relaciones' => '65-80%', 'Sentido_Comun' => '70-85%']
             ],
             'SUPERVISOR' => [
-                'perfil' => 'Supervisor',
-                'Terman' => 'CI 95-110 (Corte: 90)',
-                'Cleaver' => ['D' => '30-45%', 'I' => '40-55%', 'S' => '65-80%', 'C' => '65-80%'],
-                'Kostick' => ['L' => '4-6', 'C' => '5-7', 'S' => '5-7', 'E' => '4-6', 'N' => '4-6'],
-                'Moss' => ['Supervision' => '50-70%', 'Decision' => '50-65%', 'Evaluacion' => '50-70%', 'Relaciones' => '60-80%', 'Sentido_Comun' => '60-75%'],
-                // Mapeado directo a las subescalas del JSON
-                'Moss_Wess' => ['COHESION' => 'Promedio/Buena', 'CONTROL' => 'Promedio']
+                'perfil' => 'Supervisor de Piso / Analista Senior',
+                'Terman' => 'CI 90-105 (Funcional, pragmático)',
+                'Cleaver' => ['D' => '50-65%', 'I' => '45-60%', 'S' => '60-75%', 'C' => '70-85%'],
             ],
             'ADMINISTRATIVO' => [
-                'perfil' => 'Administrativo',
-                'Terman' => 'CI 90-105 (Corte: 88)',
-                'Cleaver' => ['D' => '15-30%', 'I' => '20-35%', 'S' => '70-90%', 'C' => '75-95%'],
-                'Kostick' => ['C' => '6-8', 'W' => '6-8', 'S' => '4-6', 'A' => '3-5', 'P' => '2-4 (Bajo control sobre otros)'],
-                'Moss' => ['Supervision' => 'No Crítico (30-50%)', 'Decision' => '40-60%', 'Evaluacion' => '40-60%', 'Relaciones' => '50-70%', 'Sentido_Comun' => '60-80%'],
-                // Mapeado directo a las subescalas del JSON
-                'Moss_Wess' => ['ORGANIZACIÓN' => 'Promedio/Buena', 'CLARIDAD' => 'Promedio/Buena']
+                'perfil' => 'Administrativo / Auxiliar / Operativo',
+                'Terman' => 'CI 85-105 (Fuerte en Atención y Concentración)',
+                'Cleaver' => ['D' => '20-35%', 'I' => '30-45%', 'S' => '70-85%', 'C' => '75-90%']
             ],
             default => [
-                'nota' => 'No se encontró un perfil estratificado específico para este puesto en el manual SEDYCO. Evaluar competencias generales.'
+                'nota' => 'No se encontró un perfil específico. Evaluar competencias operativas generales.'
             ]
         };
     }
+
     /**
-     * Devuelve los valores ideales de Cleaver (DISC) como puntos medios de los rangos SEDYCO (0-100).
-     * Usado para renderizar el dataset "Ideal SEDYCO" en la gráfica de radar del reporte.
-     *
-     * Midpoints: Directivo D=(70+85)/2=78, Mando Medio D=(50+65)/2=58, etc.
+     * Devuelve los valores ideales de Cleaver (DISC) como puntos medios.
+     * CALIBRADO PARA SECTOR LOGÍSTICO / CENTRALES DE AUTOBUSES
      */
     public function getIdealCleaverForChart(string $nivel): array
     {
         $nivel = strtoupper(trim($nivel));
 
         $ideales = [
-            'DIRECTIVO'      => ['D' => 78, 'I' => 58, 'S' => 33, 'C' => 53],
-            'MANDO MEDIO'    => ['D' => 58, 'I' => 63, 'S' => 53, 'C' => 58],
-            'SUPERVISOR'     => ['D' => 38, 'I' => 48, 'S' => 73, 'C' => 73],
-            'ADMINISTRATIVO' => ['D' => 23, 'I' => 28, 'S' => 80, 'C' => 85],
+            'DIRECTIVO'      => ['D' => 75, 'I' => 65, 'S' => 38, 'C' => 58],
+            'GERENCIA'       => ['D' => 68, 'I' => 62, 'S' => 48, 'C' => 62],
+            'MANDO MEDIO'    => ['D' => 63, 'I' => 58, 'S' => 53, 'C' => 68],
+            'SUPERVISOR'     => ['D' => 58, 'I' => 53, 'S' => 68, 'C' => 78],
+            'ADMINISTRATIVO' => ['D' => 28, 'I' => 38, 'S' => 78, 'C' => 83],
         ];
 
         return $ideales[$nivel] ?? ['D' => 50, 'I' => 50, 'S' => 50, 'C' => 50];
     }
-
 }

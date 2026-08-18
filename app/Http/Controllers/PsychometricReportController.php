@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class PsychometricReportController extends Controller
@@ -31,6 +32,7 @@ class PsychometricReportController extends Controller
             'meta'                => $data['meta'] ?? [],
             'aiAvailable'         => ! empty($data['ai_report']),
             'ajusteGlobalPhp'     => $data['ajuste_global'] ?? 0,
+            'ajusteRelativoPhp'   => $data['ajuste_relativo'] ?? 0,
             'dictamenPhp'         => $data['dictamen_calculado'] ?? 'Pendiente',
             'competenciasIdeal'   => $data['competencias_ideal'] ?? [],
             'isPdfExport'         => false,
@@ -58,8 +60,8 @@ class PsychometricReportController extends Controller
             'aiAvailable'         => ! empty($data['ai_report']),
             'cleaverIdeal'        => $data['cleaver_ideal'] ?? ['D' => 50, 'I' => 50, 'S' => 50, 'C' => 50], // ← NUEVO
             'competenciasIdeal'   => $data['competencias_ideal'] ?? [],
-            // >>> ESTAS DOS LÍNEAS FALTABAN AQUÍ <<<
             'ajusteGlobalPhp'     => $data['ajuste_global'] ?? 0,
+            'ajusteRelativoPhp'   => $data['ajuste_relativo'] ?? 0,
             'dictamenPhp'         => $data['dictamen_calculado'] ?? 'Pendiente',
             'isPdfExport'         => true,
         ])->render();
@@ -71,15 +73,38 @@ class PsychometricReportController extends Controller
             'landscape' => false,
             'use_print' => true,
             'margin'    => ['top' => '15px', 'bottom' => '15px', 'left' => '15px', 'right' => '15px'],
+            // "wait_for" en PDFShift espera el NOMBRE de una función JS global que
+            // devuelva un valor truthy (no un selector CSS). Definimos esa función
+            // para esperar a que Tailwind (CDN JIT) y Chart.js terminen de pintar
+            // antes de capturar, evitando un layout desfasado en el PDF.
+            'javascript' => "window.pdfshiftReportReady = function() { var el = document.getElementById('report-ready-flag'); return !!el && el.getAttribute('data-report-ready') === 'true'; };",
+            'wait_for'  => 'pdfshiftReportReady',
+            'delay'     => 800,
         ];
 
-        $response = Http::withHeaders([
-            'Content-Type' => 'application/json',
-            'X-API-Key'    => config('services.pdfshift.api_key'),
-        ])->withBody(json_encode($payload, JSON_UNESCAPED_UNICODE), 'application/json')
-            ->post('https://api.pdfshift.io/v3/convert/pdf');
+        try {
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+                'X-API-Key'    => config('services.pdfshift.api_key'),
+            ])->timeout(60)
+              ->withBody(json_encode($payload, JSON_UNESCAPED_UNICODE), 'application/json')
+              ->post('https://api.pdfshift.io/v3/convert/pdf');
+        } catch (\Throwable $e) {
+            Log::error('[PDFSHIFT] Excepción al llamar a la API de PDFShift', [
+                'report_key' => $key,
+                'message'    => $e->getMessage(),
+            ]);
+
+            abort(500, 'No se pudo generar el PDF. Intenta de nuevo más tarde.');
+        }
 
         if (! $response->successful()) {
+            Log::error('[PDFSHIFT] Respuesta no exitosa al generar el PDF', [
+                'report_key' => $key,
+                'status'     => $response->status(),
+                'body'       => $response->body(),
+            ]);
+
             abort(500, 'No se pudo generar el PDF. Intenta de nuevo más tarde.');
         }
 

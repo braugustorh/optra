@@ -32,13 +32,15 @@ class PsychometricDashboard extends Page implements HasTable
     protected static string $view = 'filament.pages.psychometric-dashboard';
     protected static ?string $title = 'Dashboard de Psicometrías';
     protected static ?string $navigationLabel = 'Dashboard Psicometrías';
-    protected static ?int $navigationSort = 3;
+    protected static ?string $navigationGroup = 'Psicometría';
+    protected static ?int $navigationSort = 1;
 
     // 9=MossWess, 10=Moss, 11=Cleaver, 12=Kostick, 13=Terman-Merril
     // Modelo de Assessment Psicométrico Estratificado (aplica igual a Int/Ext)
     // "op" = opcional → se pre-carga para que RH pueda desmarcar si no aplica
     const PUESTO_EVALUACIONES = [
         'Directivo'      => [13, 11, 12, 10, 9], // Terman + Cleaver + Kostick + Moss + MossWess
+        'Gerencia'       => [13, 11, 12, 10, 9], // Terman + Cleaver + Kostick + Moss + MossWess
         'Mando Medio'    => [13, 11, 12, 10, 9], // Terman + Cleaver + Kostick + Moss + MossWess
         'Supervisor'     => [13, 11],    // Terman + Cleaver + Kostick(op) + Moss(op)
         'Administrativo' => [13, 11],            // Terman + Cleaver
@@ -52,6 +54,7 @@ class PsychometricDashboard extends Page implements HasTable
      */
     const PUESTO_OBLIGATORIAS = [
         'Directivo'      => [13, 11, 12, 10, 9], // Terman + Cleaver + Kostick + Moss + MossWess
+        'Gerencia'       => [13, 11, 12, 10, 9], // Terman + Cleaver + Kostick + Moss + MossWess
         'Mando Medio'    => [13, 11, 12, 10, 9], // Terman + Cleaver + Kostick + Moss + MossWess
         'Supervisor'     => [13, 11],            // Terman + Cleaver (Kostick/Moss son opcionales)
         'Administrativo' => [13, 11],            // Terman + Cleaver
@@ -124,7 +127,8 @@ class PsychometricDashboard extends Page implements HasTable
                     ->badge()
                     ->color(fn (?string $state): string => match ($state) {
                         'Directivo'      => 'danger',
-                        'Mando Medio'    => 'warning',
+                        'Gerencia'       => 'warning',
+                        'Mando Medio'    => 'primary',
                         'Supervisor'     => 'info',
                         'Administrativo' => 'success',
                         default          => 'gray',
@@ -179,6 +183,15 @@ class PsychometricDashboard extends Page implements HasTable
                     ->visible(fn (PsychometricEvaluation $record) => $record->status === 'completed')
                     ->action(fn (PsychometricEvaluation $record) => $this->downloadPdf($record))
                     ->openUrlInNewTab(),
+
+                // ACCIÓN 4: Ir a la ficha del candidato (Gestión de Candidatos)
+                Tables\Actions\Action::make('view_candidate')
+                    ->label('Ficha del Candidato')
+                    ->icon('heroicon-o-user-group')
+                    ->color('gray')
+                    ->visible(fn (PsychometricEvaluation $record) => $record->evaluable_type === \App\Models\Candidate::class)
+                    ->url(fn (PsychometricEvaluation $record) => \App\Filament\Resources\CandidateResource::getUrl('view', ['record' => $record->evaluable_id]))
+                    ->openUrlInNewTab(),
             ]);
     }
 
@@ -228,10 +241,11 @@ class PsychometricDashboard extends Page implements HasTable
                     Forms\Components\Select::make('puesto')
                         ->label('Puesto / Nivel')
                         ->options([
-                            'Directivo'      => 'Directivo',
-                            'Mando Medio'    => 'Mando Medio (Gerencia / Jefatura)',
-                            'Supervisor'     => 'Supervisor',
-                            'Administrativo' => 'Administrativo',
+                            'Directivo'      => 'Directivo (Dirección General / Área / Subdirección)',
+                            'Gerencia'       => 'Gerencia (Corporativa / Coordinador Senior)',
+                            'Mando Medio'    => 'Mando Medio (Gerencia B / Jefatura)',
+                            'Supervisor'     => 'Supervisor / Analista Senior',
+                            'Administrativo' => 'Administrativo / Auxiliar / Operativo',
                         ])
                         ->required()
                         ->live()
@@ -307,10 +321,11 @@ class PsychometricDashboard extends Page implements HasTable
                     Forms\Components\Select::make('puesto')
                         ->label('Puesto / Nivel')
                         ->options([
-                            'Directivo'      => 'Directivo',
-                            'Mando Medio'    => 'Mando Medio (Gerencia / Jefatura)',
-                            'Supervisor'     => 'Supervisor',
-                            'Administrativo' => 'Administrativo',
+                            'Directivo'      => 'Directivo (Dirección General / Área / Subdirección)',
+                            'Gerencia'       => 'Gerencia (Corporativa / Coordinador Senior)',
+                            'Mando Medio'    => 'Mando Medio (Gerencia B / Jefatura)',
+                            'Supervisor'     => 'Supervisor / Analista Senior',
+                            'Administrativo' => 'Administrativo / Auxiliar / Operativo',
                         ])
                         ->required()
                         ->live()
@@ -427,7 +442,23 @@ class PsychometricDashboard extends Page implements HasTable
                         ->visible(fn (Forms\Get $get) => (bool) $get('evaluable_id'))
                         ->placeholder('Seleccionar batería...'),
 
-                    // 4. Panel de vista previa dinámica
+                    // 4. Puesto para el cálculo (por defecto el original de la batería,
+                    //    pero puede cambiarse para reevaluar al candidato contra otro nivel
+                    //    jerárquico sin repetir las pruebas psicométricas).
+                    Forms\Components\Select::make('puesto_override')
+                        ->label('Puesto para este cálculo')
+                        ->helperText('Por defecto se usa el puesto original de la batería. Cámbialo para reevaluar al candidato contra otro nivel jerárquico (útil si su puesto cambió y sus pruebas siguen vigentes).')
+                        ->options([
+                            'Directivo'      => 'Directivo (Dirección General / Área / Subdirección)',
+                            'Gerencia'       => 'Gerencia (Corporativa / Coordinador Senior)',
+                            'Mando Medio'    => 'Mando Medio (Gerencia B / Jefatura)',
+                            'Supervisor'     => 'Supervisor / Analista Senior',
+                            'Administrativo' => 'Administrativo / Auxiliar / Operativo',
+                        ])
+                        ->native(false)
+                        ->visible(fn (Forms\Get $get) => (bool) $get('batch_id')),
+
+                    // 5. Panel de vista previa dinámica
                     Forms\Components\Placeholder::make('preview')
                         ->label('')
                         ->content(function (Forms\Get $get): HtmlString {
@@ -475,7 +506,8 @@ class PsychometricDashboard extends Page implements HasTable
                     $generalService = new GeneralReportService();
                     $deepSeekService = app(\App\Services\DeepSeekService::class);
 
-                    $output = $generalService->generateAiReport($batchId, $deepSeekService);
+                    $puestoOverride = $data['puesto_override'] ?? null;
+                    $output = $generalService->generateAiReport($batchId, $deepSeekService, $puestoOverride);
                     // ────────────────────────────────────────────────────────
 
                     if (isset($output['error'])) {
@@ -494,9 +526,9 @@ class PsychometricDashboard extends Page implements HasTable
 
                         $friendlyMsg = match(true) {
                             str_contains(strtolower($aiErrMsg), 'insufficient balance')
-                            => 'La cuenta de DeepSeek no tiene saldo suficiente. Recarga en platform.deepseek.com y vuelve a intentarlo.',
+                                => 'La cuenta de DeepSeek no tiene saldo suficiente. Recarga en platform.deepseek.com y vuelve a intentarlo.',
                             str_contains(strtolower($aiErrMsg), 'rate limit')
-                            => 'Se alcanzó el límite de solicitudes de DeepSeek. Intenta en unos minutos.',
+                                => 'Se alcanzó el límite de solicitudes de DeepSeek. Intenta en unos minutos.',
                             default => "Error de IA [{$aiErrCode}]: {$aiErrMsg}",
                         };
 
@@ -512,7 +544,7 @@ class PsychometricDashboard extends Page implements HasTable
                     $reportKey = (string) Str::uuid();
 
                     $name   = $output['consolidated']['evaluable']->name ?? 'candidato';
-                    $puesto = $output['consolidated']['puesto'] ?? 'general';
+                    $puesto = $output['puesto_evaluado'] ?? ($output['consolidated']['puesto'] ?? 'general');
 
                     $analisisIa = $output['ai_report'] ? $output['ai_report'] : null;
 
@@ -540,6 +572,7 @@ class PsychometricDashboard extends Page implements HasTable
                         'ai_report' => $analisisIa,
                         'ai_error'           => $output['ai_error'] ?? null,
                         'ajuste_global'      => $output['ajuste_global'] ?? 0,
+                        'ajuste_relativo'    => $output['ajuste_relativo'] ?? 0,
                         'dictamen_calculado' => $output['dictamen_calculado'] ?? 'Pendiente'
                     ];
 
@@ -652,11 +685,11 @@ class PsychometricDashboard extends Page implements HasTable
             $query->whereIn('status', ['assigned', 'started', 'in_progress']);
         }])->whereIn('id',[9,10,11,12])
             ->get()->map(function($type) {
-                return [
-                    'name' => $type->name,
-                    'count' => $type->psychometric_evaluations_count,
-                ];
-            })->toArray();
+            return [
+                'name' => $type->name,
+                'count' => $type->psychometric_evaluations_count,
+            ];
+        })->toArray();
     }
 
     public function getFilteredEvaluations()
@@ -777,6 +810,12 @@ class PsychometricDashboard extends Page implements HasTable
                     'assigned_at'         => now(),
                 ]);
             }
+
+            // Sincroniza el puesto declarado del candidato con el de la batería
+            // recién asignada, para que "Gestión de Candidatos" no lo muestre vacío.
+            if ($evaluableType === Candidate::class && filled($puesto)) {
+                Candidate::where('id', $evaluableId)->update(['position_applied' => $puesto]);
+            }
         });
         // 2. Recuperar al usuario/candidato para obtener su email y nombre
         $recipient = $evaluableType::find($evaluableId);
@@ -803,7 +842,7 @@ class PsychometricDashboard extends Page implements HasTable
         // 1. Calculamos los resultados con tu cerebro psicométrico
         $service = new PsychometricScoringService();
         $results = $service->calculate($record);
-        // dd($results);
+       // dd($results);
         // 2. Preparamos los datos para la vista del PDF
         $candidateName = $record->evaluable->name ?? 'Candidato';
         $testName = $results['test_name'] ?? 'Evaluacion';
