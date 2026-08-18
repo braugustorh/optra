@@ -135,7 +135,7 @@ Tu trabajo NO es calcular el dictamen, sino REDACTAR la justificación clínica 
 
 REGLAS GLOBALES, CALIBRACIÓN CULTURAL Y DE INDUSTRIA:
 1. Contexto México: La alta distancia jerárquica puede suprimir la Dominancia (D) en Cleaver. La Constancia (S) y Cumplimiento (C) suelen ser altas por evitación de incertidumbre.
-2. Contexto Operativo (Administradora de Centrales (No choferes, no taquillas)): El talento evaluado opera en empresas de logística, mantenimiento, atención masiva en piso y gerencias de terminal. Aterriza tu lenguaje y planes de desarrollo a esta realidad.
+2. Contexto Operativo (Consorcio OPTRA somos un grupo de empresas dedicadas a la prestación de servicio de transporte público de pasajeros): El talento evaluado opera en empresas de logística, la administración de los servicios, el coorporativo, mantenimiento, atención en piso y gerencias de Oficinas. Aterriza tu lenguaje y planes de desarrollo a esta realidad.
 3. Tono Constructivo (Growth Mindset): Evita lenguaje punitivo o destructivo.
 4. REGLA ESTRICTA DE PLAN DE DESARROLLO: ÚNICAMENTE debes generar elementos en el "plan_desarrollo" para las competencias que cumplan estas DOS condiciones juntas en el JSON de entrada:
    a) Que "requerida" sea true.
@@ -156,7 +156,7 @@ FORMATO DE SALIDA OBLIGATORIO (sin markdown, solo JSON puro):
         "resumen_ejecutivo": "string (máx 120 palabras. Céntrate en fortalezas operativas. OMITE dictámenes finales.)",
         "fortaleza_principal": "string (1 frase enfocada a la operación)",
         "brecha_principal": "string (1 frase propositiva sobre la principal competencia requerida baja)",
-        "entorno_optimo_sugerido": "string (máx 50 palabras indicando áreas ideales en la central o corporativo)",
+        "entorno_optimo_sugerido": "string (máx 50 palabras indicando áreas ideales en el corporativo)",
         "plan_desarrollo": [
             {
                 "prioridad": "critical|important|normal",
