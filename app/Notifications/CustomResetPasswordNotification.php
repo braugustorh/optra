@@ -39,10 +39,7 @@ class CustomResetPasswordNotification extends Notification
      */
     public function toMail(object $notifiable): MailMessage
     {
-        $url = route('filament.dashboard.auth.password-reset.reset', [
-            'token' => $this->token,
-            'email' => $this->user->email,
-        ]);
+        $url = \Filament\Facades\Filament::getResetPasswordUrl($this->token, $this->user);
 
         return (new MailMessage)
             ->subject(Lang::get('Notificación de restablecimiento de contraseña'))
