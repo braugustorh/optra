@@ -402,6 +402,10 @@ class CreateUser extends CreateRecord
                         ->required()
                         ->unique('users', 'email', fn ($record) => $record ? $record->id : null)
                         ->maxLength(80),
+                    TextInput::make('alternate_email')
+                        ->label('Correo Alterno')
+                        ->email()
+                        ->maxLength(80),
                     DateTimePicker::make('email_verified_at')
                     ->hidden()
                     ->default(now()),

@@ -40,7 +40,7 @@ class AdminPanelProvider extends PanelProvider
             ->id('dashboard')
             ->path('dashboard')
             ->login()
-            ->passwordReset()
+            ->passwordReset(\App\Filament\Pages\Auth\CustomPasswordReset::class)
             ->brandName('Optra')
             ->darkModeBrandLogo(asset('img/optraDarkLogo.png'))
             ->brandLogoHeight('40px')

@@ -407,6 +407,10 @@ class EditUser extends EditRecord
                         ->required()
                         ->unique('users', 'email', fn ($record) => $record)
                         ->maxLength(80),
+                    TextInput::make('alternate_email')
+                        ->label('Correo Alterno')
+                        ->email()
+                        ->maxLength(80),
                     TextInput::make('password')
                         ->label('Contraseña')
                         ->password()

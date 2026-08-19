@@ -129,6 +129,10 @@ class UserResource extends Resource
                 Tables\Columns\TextColumn::make('email')
                     ->label('Correo Electrónico')
                     ->searchable(),
+                Tables\Columns\TextColumn::make('alternate_email')
+                    ->label('Correo Alterno')
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->searchable(),
                 Tables\Columns\TextColumn::make('phone')
                     ->label('Teléfono')
                     ->toggleable(isToggledHiddenByDefault: true)
@@ -268,6 +272,9 @@ class UserResource extends Resource
                             ->schema([
                                 Forms\Components\TextInput::make('email')
                                     ->label('Correo Electrónico')
+                                    ->disabled(),
+                                Forms\Components\TextInput::make('alternate_email')
+                                    ->label('Correo Alterno')
                                     ->disabled(),
                                 Forms\Components\TextInput::make('phone')
                                     ->label('Teléfono')

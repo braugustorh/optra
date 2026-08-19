@@ -75,6 +75,7 @@ class User extends Authenticatable implements FilamentUser
         'entry_date',
         // Cuenta
         'email',
+        'alternate_email',
         'email_verified_at',
         'password',
         'profile_photo',
