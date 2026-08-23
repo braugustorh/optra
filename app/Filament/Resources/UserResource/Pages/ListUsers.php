@@ -5,7 +5,9 @@ namespace App\Filament\Resources\UserResource\Pages;
 use App\Filament\Resources\UserResource;
 use Filament\Actions;
 use App\Models\Sede;
+use Filament\Resources\Components\Tab;
 use Filament\Resources\Pages\ListRecords;
+use Illuminate\Database\Eloquent\Builder;
 
 class ListUsers extends ListRecords
 {
@@ -46,6 +48,38 @@ class ListUsers extends ListRecords
 
     }
 
+    public function getTabs(): array
+    {
+        return [
+            'activos' => Tab::make('Activos')
+                ->icon('heroicon-o-check-circle')
+                ->badge(fn () => UserResource::applyUserScopeQuery(
+                    UserResource::getModel()::query()->where('status', true)
+                )->count())
+                ->badgeColor('success')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', true)),
+
+            'inactivos' => Tab::make('Inactivos')
+                ->icon('heroicon-o-user-minus')
+                ->badge(fn () => UserResource::applyUserScopeQuery(
+                    UserResource::getModel()::query()->where('status', false)
+                )->count())
+                ->badgeColor('danger')
+                ->modifyQueryUsing(fn (Builder $query) => $query->where('status', false)),
+
+            'todos' => Tab::make('Todos')
+                ->icon('heroicon-o-users')
+                ->badge(fn () => UserResource::applyUserScopeQuery(
+                    UserResource::getModel()::query()
+                )->count())
+                ->badgeColor('gray'),
+        ];
+    }
+
+    public function getDefaultActiveTab(): string|int|null
+    {
+        return 'activos';
+    }
 
     protected function getHeaderWidgets(): array
     {

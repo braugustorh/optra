@@ -214,6 +214,16 @@ class UserResource extends Resource
 
             ])
             ->filters([
+                Tables\Filters\SelectFilter::make('sede_id')
+                    ->label('Sede')
+                    ->relationship('sede', 'name')
+                    ->searchable()
+                    ->preload(),
+                Tables\Filters\SelectFilter::make('razon_social_id')
+                    ->label('Razón Social')
+                    ->relationship('razonSocial', 'name')
+                    ->searchable()
+                    ->preload(),
                 Tables\Filters\SelectFilter::make('status')
                     ->label('Estatus')
                     ->options([
@@ -597,31 +607,105 @@ class UserResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('bulkBaja')
+                        ->label('Dar de Baja')
+                        ->icon('heroicon-o-user-minus')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->modalHeading('Baja Masiva de Colaboradores')
+                        ->modalDescription('Esta acción cambiará el estatus de los usuarios seleccionados a Inactivo (Baja).')
+                        ->modalSubmitActionLabel('Confirmar Baja Masiva')
+                        ->visible(fn () => auth()->user()->hasAnyRole('RH', 'RH Corp', 'Administrador'))
+                        ->form([
+                            Forms\Components\DatePicker::make('termination_date')
+                                ->label('Fecha Efectiva de Baja')
+                                ->default(now())
+                                ->required(),
+                            Forms\Components\Select::make('termination_type')
+                                ->label('Motivo de Baja')
+                                ->options([
+                                    'abandono' => 'Abandono de trabajo / Fuera de instalaciones',
+                                    'renuncia_voluntaria' => 'Renuncia Voluntaria',
+                                    'despido' => 'Despido',
+                                    'terminacion_contrato' => 'Terminación de Contrato',
+                                    'otro' => 'Otro',
+                                ])
+                                ->default('abandono')
+                                ->required(),
+                            Forms\Components\Textarea::make('detailed_reason')
+                                ->label('Observaciones / Motivo Detallado')
+                                ->default('Baja masiva por colaboradores fuera de instalaciones')
+                                ->rows(2),
+                        ])
+                        ->action(function (\Illuminate\Database\Eloquent\Collection $records, array $data): void {
+                            $count = 0;
+                            foreach ($records as $record) {
+                                try {
+                                    UserTermination::updateOrCreate(
+                                        ['user_id' => $record->id],
+                                        [
+                                            'processed_by' => auth()->id(),
+                                            'termination_date' => $data['termination_date'] ?? now(),
+                                            'termination_type' => $data['termination_type'] ?? 'abandono',
+                                            'detailed_reason' => $data['detailed_reason'] ?? 'Baja masiva de usuarios',
+                                            'performance' => 'regular',
+                                            'performance_comments' => 'Baja masiva administrativa - No evaluado presencialmente',
+                                            'supervisor_feedback' => 'Baja masiva por abandono / fuera de instalaciones',
+                                            'settlement_completed' => 0,
+                                            'access_deactivated' => 1,
+                                            'access_deactivation_date' => now(),
+                                            'exit_interview' => 0,
+                                            're_hire' => 0,
+                                        ]
+                                    );
+
+                                    $record->update(['status' => false]);
+                                    $count++;
+                                } catch (\Exception $e) {
+                                    Log::error("Error en baja masiva usuario {$record->id}: " . $e->getMessage());
+                                }
+                            }
+
+                            Notification::make()
+                                ->success()
+                                ->title('Baja masiva procesada')
+                                ->body("Se han dado de baja {$count} colaborador(es) exitosamente.")
+                                ->send();
+                        })
+                        ->deselectRecordsAfterCompletion(),
                     Tables\Actions\DeleteBulkAction::make()
                         ->visible(fn()=>VisorRoleHelper::canEdit()),
                 ]),
                 ExportBulkAction::make(),
-            ])->modifyQueryUsing(function (Builder $query) {
-                // Si el usuario tiene el rol "Jefe RH", filtrar por su sede_id
-                if (auth()->user()->hasAnyRole('RH','Gerente')) {
-                    $query->where('sede_id', \auth()->user()->sede_id);
-                }elseif ( auth()->user()->hasRole('Supervisor') ) {
-                    $supervisorId = auth()->user()->position_id;
-                    $users = User::where('status', true)
-                        ->whereNotNull('department_id')
-                        ->whereNotNull('position_id')
-                        ->whereNotNull('sede_id')
-                        ->whereHas('position', function ($query) use ($supervisorId) {
-                            $query->where('supervisor_id', $supervisorId);
-                        })
-                        ->pluck('users.id');
+            ])
+            ->modifyQueryUsing(fn (Builder $query) => self::applyUserScopeQuery($query));
+    }
 
-                    $query->whereIn('id', $users);
-                }elseif ( !auth()->user()->hasAnyRole('RH Corp','Administrador','Director') ) {
+    public static function applyUserScopeQuery(Builder $query): Builder
+    {
+        $user = auth()->user();
+        if (!$user) {
+            return $query;
+        }
 
-                    $query->where('id',auth()->id());
-                }
-            });
+        if ($user->hasAnyRole('RH', 'Gerente')) {
+            return $query->where('sede_id', $user->sede_id);
+        } elseif ($user->hasRole('Supervisor')) {
+            $supervisorId = $user->position_id;
+            $subordinateIds = User::whereNotNull('department_id')
+                ->whereNotNull('position_id')
+                ->whereNotNull('sede_id')
+                ->whereHas('position', function ($q) use ($supervisorId) {
+                    $q->where('supervisor_id', $supervisorId);
+                })
+                ->pluck('users.id');
+
+            return $query->whereIn('id', $subordinateIds);
+        } elseif (!$user->hasAnyRole('RH Corp', 'Administrador', 'Director')) {
+            return $query->where('id', $user->id);
+        }
+
+        return $query;
     }
 
     public static function getRelations(): array
