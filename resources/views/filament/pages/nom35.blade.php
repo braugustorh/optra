@@ -1,6 +1,6 @@
 
 <x-filament-panels::page>
-    @if(auth()->user()->hasRole('RH Corp') && $selected_sede_id)
+    @if(auth()->user()->hasAnyRole('RH Corp', 'Administrador') && $selected_sede_id)
         <div class="mb-4">
             <x-filament::button
                 wire:click="clearSelectedSede"

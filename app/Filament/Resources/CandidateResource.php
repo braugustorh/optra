@@ -88,12 +88,12 @@ class CandidateResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return \auth()->user()->hasAnyRole(['Administrador', 'RH Corp', 'RH']);
+        return \auth()->user()->hasAnyRole(['Administrador', 'RH Corp', 'RH', 'Reclutador']);
     }
 
     public static function canChangeStatus(): bool
     {
-        return \auth()->user()->hasAnyRole(['Administrador', 'RH Corp']);
+        return \auth()->user()->hasAnyRole(['Administrador', 'RH Corp','RH', 'Reclutador']);
     }
 
     public static function form(Form $form): Form

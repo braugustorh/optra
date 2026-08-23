@@ -103,7 +103,7 @@ class Nom035 extends Page
     }
     public function getCurrentSedeId()
     {
-        if (auth()->check() && auth()->user()->hasRole('RH Corp')) {
+        if (auth()->check() && auth()->user()->hasAnyRole('RH Corp', 'Administrador')) {
             return session('selected_sede_id');
         }
         $user = auth()->user();
@@ -156,7 +156,7 @@ class Nom035 extends Page
     {
         $this->selected_sede_id = $this->getCurrentSedeId();
 
-        if (auth()->user()->hasRole('RH Corp') && !$this->selected_sede_id) {
+        if (!$this->selected_sede_id && auth()->user()->hasAnyRole('RH Corp', 'Administrador')) {
             $this->stage = 'monitor';
             $this->loadMonitorData();
             return;
