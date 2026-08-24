@@ -67,7 +67,7 @@ class PsychometricDashboard extends Page implements HasTable
     //Poner función para que solo sea visible para RH Corp
     public static function canView(): bool
     {
-        return \auth()->user()->hasAnyRole(['Administrador','RH Corp','RH']);
+        return \auth()->user()->hasAnyRole(['Administrador','RH Corp','RH','Reclutador']);
 
     }
     public static function shouldRegisterNavigation(): bool
