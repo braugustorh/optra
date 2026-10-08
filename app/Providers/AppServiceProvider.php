@@ -7,6 +7,8 @@ use App\Models\Campaign;
 use App\Observers\CampaignObserver;
 use App\Models\VacationRequest;
 use App\Observers\VacationRequestObserver;
+use App\Models\Compulsa\Calculation as CompulsaCalculation;
+use App\Observers\Compulsa\CalculationObserver as CompulsaCalculationObserver;
 
 
 class AppServiceProvider extends ServiceProvider
@@ -26,6 +28,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Campaign::observe(CampaignObserver::class);
         VacationRequest::observe(VacationRequestObserver::class);
+        CompulsaCalculation::observe(CompulsaCalculationObserver::class);
 
     }
 }

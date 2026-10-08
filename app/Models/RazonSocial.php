@@ -13,6 +13,7 @@ class RazonSocial extends Model
         'name',
         'code',
         'rfc',
+        'registro_patronal',
         'fiscal_address',
         'status'
     ];
@@ -25,5 +26,22 @@ class RazonSocial extends Model
     public function users()
     {
         return $this->hasMany(User::class);
+    }
+
+    public function riskPremiums(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\Compulsa\RiskPremium::class);
+    }
+
+    public function calculations(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Models\Compulsa\Calculation::class);
+    }
+
+    public function riskPremiumFor(int $ejercicio): ?\App\Models\Compulsa\RiskPremium
+    {
+        return $this->riskPremiums()
+            ->where('ejercicio', $ejercicio)
+            ->first();
     }
 }

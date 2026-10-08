@@ -58,6 +58,10 @@ class RazonSocialResource extends Resource
                             ->required()
                             ->extraInputAttributes(['style' => 'text-transform: uppercase;'])
                             ->dehydrateStateUsing(fn ($state) => strtoupper($state)),
+                        TextInput::make('registro_patronal')
+                            ->label('Registro Patronal (IMSS)')
+                            ->maxLength(50)
+                            ->placeholder('Ej. Y5512345101'),
                         Toggle::make('status')
                             ->label('Activo / Operativo')
                             ->inline(false)
@@ -88,6 +92,10 @@ class RazonSocialResource extends Resource
                 Tables\Columns\TextColumn::make('rfc')
                     ->label('RFC')
                     ->searchable(),
+                Tables\Columns\TextColumn::make('registro_patronal')
+                    ->label('Registro Patronal')
+                    ->searchable()
+                    ->placeholder('—'),
                 Tables\Columns\TextColumn::make('sedes.name')
                     ->label('Sedes')
                     ->badge()
