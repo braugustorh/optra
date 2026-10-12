@@ -1433,14 +1433,9 @@ class Nom035 extends Page
     {
 
         $templatePath = storage_path('app/plantillas/Politica_de_riesgos_template_Optra.docx'); // Mueve el archivo ahí
-        $sede = auth()->user()->sede->name;
+        $sede = auth()->user()->sede->name ?? 'Sin SEDE';
         $nombreArchivoSalida = 'Politica_Riesgos_' . str_replace(' ', '_', $sede) . '.docx';
         //$sede = auth()->user()->sede->name;
-        if ($this->getCurrentSedeId()===3) {
-            $sede = 'ADMINISTRADORA DE CENTRALES Y TERMINALES';
-        }else{
-            $sede = auth()->user()->sede?->company_name ?? 'Sin Razón Social';
-        }
 
         $mes = strtoupper(\Carbon\Carbon::now()->locale('es')->isoFormat('MMMM')); // mes en mayúsculas
         $anio = now()->format('Y'); // año a 4 dígitos

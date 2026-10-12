@@ -183,6 +183,11 @@ class User extends Authenticatable implements FilamentUser
         return $this->hasMany(PsychometricEvaluation::class, 'assigned_by');
     }
 
+    public function transfers(): HasMany
+    {
+        return $this->hasMany(UserTransfer::class)->latest('transfer_date');
+    }
+
 
 
     public function getProfilePhotoUrlAttribute(): string

@@ -22,6 +22,11 @@ use pxlrbt\FilamentExcel\Actions\Tables\ExportBulkAction;
 use Filament\Pages\Actions\CreateAction;
 use App\Notifications\UserReactivated;
 use App\Models\UserTermination;
+use App\Models\UserTransfer;
+use App\Models\Department;
+use App\Models\Position;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 use Filament\Notifications\Notification;
 
 
@@ -607,6 +612,210 @@ class UserResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\BulkAction::make('transferirSede')
+                        ->label('Transferir Sede')
+                        ->icon('heroicon-o-arrows-right-left')
+                        ->color('warning')
+                        ->requiresConfirmation()
+                        ->modalHeading('Transferencia Masiva de Sede')
+                        ->modalDescription('Esta acción reasignará a los colaboradores seleccionados a una nueva sede, homologando automáticamente sus departamentos y puestos y guardando la trazabilidad histórica.')
+                        ->modalSubmitActionLabel('Confirmar Transferencia')
+                        ->visible(fn () => auth()->user()->hasAnyRole('RH Corp', 'Administrador'))
+                        ->form([
+                            Forms\Components\Select::make('to_sede_id')
+                                ->label('Sede Destino')
+                                ->options(fn () => Sede::where('status', true)->pluck('name', 'id'))
+                                ->searchable()
+                                ->preload()
+                                ->required()
+                                ->live(),
+                            Forms\Components\Select::make('to_razon_social_id')
+                                ->label('Razón Social Operativa')
+                                ->helperText('Seleccione la razón social de la sede destino o déjelo vacío para conservar la actual si es compatible.')
+                                ->options(function (Forms\Get $get) {
+                                    $sedeId = $get('to_sede_id');
+                                    if (!$sedeId) {
+                                        return [];
+                                    }
+                                    $sede = Sede::find($sedeId);
+                                    return $sede ? $sede->razonSocials->pluck('name', 'id') : [];
+                                })
+                                ->searchable()
+                                ->preload(),
+                            Forms\Components\DatePicker::make('transfer_date')
+                                ->label('Fecha Efectiva de Transferencia')
+                                ->default(now())
+                                ->required(),
+                            Forms\Components\Select::make('reason')
+                                ->label('Motivo del Traslado')
+                                ->options([
+                                    'Cierre o reubicación de sede' => 'Cierre o reubicación de sede',
+                                    'Reorganización corporativa' => 'Reorganización corporativa',
+                                    'Movilidad interna / Promoción' => 'Movilidad interna / Promoción',
+                                    'Fusión departamental' => 'Fusión departamental',
+                                    'Solicitud del colaborador' => 'Solicitud del colaborador',
+                                    'Otro' => 'Otro',
+                                ])
+                                ->default('Cierre o reubicación de sede')
+                                ->required(),
+                            Forms\Components\Textarea::make('notes')
+                                ->label('Observaciones / Motivo Detallado')
+                                ->placeholder('Ej. Cierre de oficinas de la sede X y reubicación del personal.')
+                                ->rows(2),
+                            Forms\Components\Toggle::make('auto_adjust_open_positions')
+                                ->label('Ajustar plazas disponibles de la sede destino')
+                                ->helperText('Incrementa open_positions en la sede receptora si se rebasa el cupo disponible.')
+                                ->default(true),
+                        ])
+                        ->action(function (\Illuminate\Database\Eloquent\Collection $records, array $data): void {
+                            $toSedeId = $data['to_sede_id'];
+                            $toSede = Sede::find($toSedeId);
+                            if (!$toSede) {
+                                Notification::make()
+                                    ->danger()
+                                    ->title('Sede destino no encontrada')
+                                    ->send();
+                                return;
+                            }
+
+                            $batchId = (string) Str::uuid();
+                            $transferredCount = 0;
+                            $reason = $data['reason'] ?? 'Cierre o reubicación de sede';
+                            $transferDate = $data['transfer_date'] ?? now();
+                            $notes = $data['notes'] ?? null;
+                            $toRazonSocialId = !empty($data['to_razon_social_id']) ? $data['to_razon_social_id'] : null;
+
+                            DB::beginTransaction();
+                            try {
+                                foreach ($records as $record) {
+                                    $fromSedeId = $record->sede_id;
+                                    $fromDeptId = $record->department_id;
+                                    $fromPosId = $record->position_id;
+                                    $fromRazonId = $record->razon_social_id;
+
+                                    // 1. Homologar Departamento en la nueva sede:
+                                    $newDeptId = null;
+                                    if ($record->department) {
+                                        $deptName = trim($record->department->name);
+                                        $targetDept = Department::where('sede_id', $toSede->id)
+                                            ->where('name', $deptName)
+                                            ->first();
+
+                                        if (!$targetDept) {
+                                            $targetDept = Department::create([
+                                                'sede_id' => $toSede->id,
+                                                'name' => $deptName,
+                                                'status' => true,
+                                            ]);
+                                        }
+                                        $newDeptId = $targetDept->id;
+                                    }
+
+                                    // 2. Homologar Puesto en el departamento de la nueva sede:
+                                    $newPosId = null;
+                                    if ($record->position && $newDeptId) {
+                                        $posName = trim($record->position->name);
+                                        $targetPos = Position::where('department_id', $newDeptId)
+                                            ->where('name', $posName)
+                                            ->first();
+
+                                        if (!$targetPos) {
+                                            $targetPos = Position::create([
+                                                'department_id' => $newDeptId,
+                                                'name' => $posName,
+                                                'status' => true,
+                                                'order' => $record->position->order ?? 1,
+                                                'description' => $record->position->description,
+                                            ]);
+                                        }
+                                        $newPosId = $targetPos->id;
+                                    }
+
+                                    // 3. Determinar Razón Social:
+                                    $finalRazonId = $toRazonSocialId;
+                                    if (!$finalRazonId) {
+                                        $isCompatible = $fromRazonId ? $toSede->razonSocials()->where('razon_socials.id', $fromRazonId)->exists() : false;
+                                        $finalRazonId = $isCompatible ? $fromRazonId : $toSede->razonSocials()->first()?->id;
+                                    }
+
+                                    // 4. Registrar en historial de traslados:
+                                    UserTransfer::create([
+                                        'batch_id' => $batchId,
+                                        'user_id' => $record->id,
+                                        'from_sede_id' => $fromSedeId,
+                                        'to_sede_id' => $toSede->id,
+                                        'from_department_id' => $fromDeptId,
+                                        'to_department_id' => $newDeptId,
+                                        'from_position_id' => $fromPosId,
+                                        'to_position_id' => $newPosId,
+                                        'from_razon_social_id' => $fromRazonId,
+                                        'to_razon_social_id' => $finalRazonId,
+                                        'transfer_date' => $transferDate,
+                                        'transferred_by' => auth()->id(),
+                                        'reason' => $reason,
+                                        'notes' => $notes,
+                                    ]);
+
+                                    // 5. Actualizar el usuario:
+                                    $record->update([
+                                        'sede_id' => $toSede->id,
+                                        'department_id' => $newDeptId,
+                                        'position_id' => $newPosId,
+                                        'razon_social_id' => $finalRazonId,
+                                    ]);
+
+                                    $transferredCount++;
+                                }
+
+                                // 6. Ajustar capacidad (open_positions) de la sede destino si aplica:
+                                if (!empty($data['auto_adjust_open_positions'])) {
+                                    $occupied = $toSede->count_positions($toSede->id);
+                                    if ($occupied > $toSede->open_positions) {
+                                        $toSede->update(['open_positions' => $occupied]);
+                                    }
+                                }
+
+                                DB::commit();
+
+                                // 7. Notificar a todos los usuarios con rol 'RH Corp':
+                                $actor = auth()->user();
+                                $actorName = trim("{$actor->name} {$actor->first_name} {$actor->last_name}");
+                                $rhCorpUsers = User::whereHas('roles', function ($query) {
+                                    $query->where('name', 'RH Corp');
+                                })->where('status', 1)->get();
+
+                                $notifTitle = 'Transferencia Masiva de Sede';
+                                $notifBody = "{$actorName} transfirió {$transferredCount} colaborador(es) a la sede {$toSede->name}. Motivo: {$reason}.";
+
+                                foreach ($rhCorpUsers as $rhUser) {
+                                    try {
+                                        Notification::make()
+                                            ->title($notifTitle)
+                                            ->info()
+                                            ->body($notifBody)
+                                            ->sendToDatabase($rhUser);
+                                    } catch (\Exception $e) {
+                                        Log::error("Error al notificar RH Corp {$rhUser->id}: " . $e->getMessage());
+                                    }
+                                }
+
+                                Notification::make()
+                                    ->success()
+                                    ->title('Transferencia masiva procesada')
+                                    ->body("Se han transferido {$transferredCount} colaborador(es) a la sede {$toSede->name} exitosamente.")
+                                    ->send();
+
+                            } catch (\Exception $e) {
+                                DB::rollBack();
+                                Log::error('Error en transferencia masiva de sede: ' . $e->getMessage());
+                                Notification::make()
+                                    ->danger()
+                                    ->title('Error al procesar la transferencia')
+                                    ->body($e->getMessage())
+                                    ->send();
+                            }
+                        })
+                        ->deselectRecordsAfterCompletion(),
                     Tables\Actions\BulkAction::make('bulkBaja')
                         ->label('Dar de Baja')
                         ->icon('heroicon-o-user-minus')
@@ -712,6 +921,7 @@ class UserResource extends Resource
     {
         return [
             RelationManagers\PortfolioRelationManager::class,
+            RelationManagers\TransfersRelationManager::class,
         ];
     }
     public static function getWidgets(): array
