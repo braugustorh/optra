@@ -35,7 +35,7 @@ class GlobalSettingResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return Auth::check() && Auth::user()->hasAnyRole(['Administrador', 'RH Corp']);
+        return Auth::check() && Auth::user()->hasAnyRole(['Administrador', 'RH Corp', 'Compulsa']);
     }
 
     public static function canCreate(): bool

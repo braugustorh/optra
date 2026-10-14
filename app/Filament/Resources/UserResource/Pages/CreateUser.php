@@ -427,10 +427,10 @@ class CreateUser extends CreateRecord
                         ->relationship('roles', 'name', function ($query) {
                             $user = auth()->user();
                             // Filtra los roles según el rol del usuario actual
-                            if ($user->hasRole('Administrador')) {
-                                return $query; // Admin ve todos los roles
-                            }elseif($user->hasRole('RH Corp')) {
-                                return $query->whereIn('name', ['RH Corp','RH', 'Colaborador', 'Supervisor','Operativo']);
+                            if ($user->hasAnyRole(['Administrador', 'Super Administrador'])) {
+                                return $query; // Admin y Super Admin ven todos los roles
+                            } elseif ($user->hasRole('RH Corp')) {
+                                return $query->whereIn('name', ['RH Corp', 'RH', 'Colaborador', 'Supervisor', 'Operativo', 'Compulsa', 'Apoyo Expedientes', 'Reclutador Jr', 'Reclutador']);
                             }
                             // Ejemplo: solo roles específicos para otros usuarios
                             return $query->whereIn('name', ['Colaborador', 'Supervisor','Operativo']);

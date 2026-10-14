@@ -35,7 +35,7 @@ class PortfolioResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-square-3-stack-3d';
     public static function getNavigationGroup(): ?string
     {
-        if (auth()->user()?->hasAnyRole(['RH Corp', 'Administrador','Super Administrador'])) {
+        if (auth()->user()?->hasAnyRole(['RH Corp', 'Administrador', 'Super Administrador', 'Apoyo Expedientes'])) {
             return 'Colaboradores';
         }
 
@@ -50,17 +50,17 @@ class PortfolioResource extends Resource
 
     public static function canViewAny(): bool
     {
-
-        return (\auth()->user()->hasAnyRole('RH','RH Corp','Administrador','Supervisor','Colaborador','Visor','Gerente','Operativo'));
-
+        return (\auth()->user()->hasAnyRole('RH', 'RH Corp', 'Administrador', 'Supervisor', 'Colaborador', 'Visor', 'Gerente', 'Operativo', 'Apoyo Expedientes'));
     }
+
     public static function canCreate(): bool
     {
-        return (\auth()->user()->hasAnyRole('RH','RH Corp','Administrador'));
+        return (\auth()->user()->hasAnyRole('RH', 'RH Corp', 'Administrador', 'Apoyo Expedientes'));
     }
+
     public static function canEdit(Model $record): bool
     {
-        return (\auth()->user()->hasAnyRole('RH','RH Corp','Administrador'));
+        return (\auth()->user()->hasAnyRole('RH', 'RH Corp', 'Administrador', 'Apoyo Expedientes'));
     }
 
     public static function form(Form $form): Form
@@ -83,7 +83,7 @@ class PortfolioResource extends Resource
                                         ->get()
                                         ->mapWithKeys(fn (User $user): array => [$user->id => $user->name.' '.$user->first_name .' '.$user->last_name]);
                                 }else{
-                                    if (auth()->user()->hasAnyRole('Administrador','RH Corp','Visor')){
+                                    if (auth()->user()->hasAnyRole('Administrador', 'Super Administrador', 'RH Corp', 'Visor', 'Apoyo Expedientes')){
                                         $user=User::query()
                                             ->doesntHave('portfolio')
                                             ->where('status',1)
@@ -271,7 +271,7 @@ class PortfolioResource extends Resource
                             ->visibility('public')
                             ->previewable('true')
                             ->openable()
-                            ->hidden(fn (): bool => !auth()->user()->hasAnyRole(['Administrador', 'RH Corp', 'RH','Supervior']))
+                            ->hidden(fn (): bool => !auth()->user()->hasAnyRole(['Administrador', 'RH Corp', 'RH', 'Supervior', 'Apoyo Expedientes']))
                             ->label('Alta en el IMSS')
                             ->acceptedFileTypes(['image/*', 'application/pdf'])
                             ->maxSize('2048')
@@ -283,7 +283,7 @@ class PortfolioResource extends Resource
                             ->visibility('public')
                             ->previewable('true')
                             ->openable()
-                            ->hidden(fn (): bool => !auth()->user()->hasAnyRole(['Administrador', 'RH','RH Corp']))
+                            ->hidden(fn (): bool => !auth()->user()->hasAnyRole(['Administrador', 'RH', 'RH Corp', 'Apoyo Expedientes']))
                             ->label('Modificación en el IMSS')
                             ->acceptedFileTypes(['image/*', 'application/pdf'])
                             ->maxSize('2048')
@@ -295,7 +295,7 @@ class PortfolioResource extends Resource
                             ->downloadable('true')
                             ->previewable('true')
                             ->openable()
-                            ->hidden(fn (): bool => !auth()->user()->hasAnyRole(['Administrador', 'RH','RH Corp']))
+                            ->hidden(fn (): bool => !auth()->user()->hasAnyRole(['Administrador', 'RH', 'RH Corp', 'Apoyo Expedientes']))
                             ->label('Baja en el IMSS')
                             ->acceptedFileTypes(['image/*', 'application/pdf'])
                             ->maxSize('2048')
@@ -334,7 +334,7 @@ class PortfolioResource extends Resource
                             ->disk('sedyco_disk')
                             ->visibility('public')
                             ->openable()
-                            ->hidden(fn (): bool => !auth()->user()->hasAnyRole(['Administrador', 'RH','RH Corp']))
+                            ->hidden(fn (): bool => !auth()->user()->hasAnyRole(['Administrador', 'RH', 'RH Corp', 'Apoyo Expedientes']))
                             ->label('Renuncia')
                             ->acceptedFileTypes(['image/*', 'application/pdf'])
                             ->maxSize('2048')
@@ -346,7 +346,7 @@ class PortfolioResource extends Resource
                             ->downloadable('true')
                             ->previewable('true')
                             ->openable()
-                            ->hidden(fn (): bool => !auth()->user()->hasAnyRole(['Administrador', 'RH','RH Corp']))
+                            ->hidden(fn (): bool => !auth()->user()->hasAnyRole(['Administrador', 'RH', 'RH Corp', 'Apoyo Expedientes']))
                             ->label('Finiquito')
                             ->acceptedFileTypes(['image/*', 'application/pdf'])
                             ->maxSize('2048')
@@ -517,6 +517,10 @@ class PortfolioResource extends Resource
                */
             ])
             ->modifyQueryUsing(function (Builder $query) {
+                if (auth()->user()->hasAnyRole(['Administrador', 'Super Administrador', 'RH Corp', 'Apoyo Expedientes'])) {
+                    return;
+                }
+
                 // Si el usuario tiene el rol "Jefe RH", filtrar por su sede_id
                 if (auth()->user()->hasRole('RH')) {
                     $users=User::where('sede_id',\auth()->user()->sede_id)->pluck('id');

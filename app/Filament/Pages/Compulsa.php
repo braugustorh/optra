@@ -59,7 +59,7 @@ class Compulsa extends Page implements HasTable
 
     public static function canView(): bool
     {
-        return auth()->check() && auth()->user()->hasAnyRole(['Administrador', 'RH Corp']);
+        return auth()->check() && auth()->user()->hasAnyRole(['Administrador', 'RH Corp', 'Compulsa']);
     }
 
     public static function shouldRegisterNavigation(): bool

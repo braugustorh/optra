@@ -9,8 +9,8 @@ class CustomPermissionResource extends BasePermissionResource
 {
     public static function canViewAny(): bool
     {
-        // Solo los administradores pueden ver este recurso
-        return auth()->check() && auth()->user()->hasRole('Administrador');
+        // Administradores y Super Administradores pueden ver este recurso
+        return auth()->check() && auth()->user()->hasAnyRole(['Administrador', 'Super Administrador']);
     }
 
     public static function shouldRegisterNavigation(): bool
