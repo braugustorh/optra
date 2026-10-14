@@ -449,6 +449,12 @@
                         <span class="info-label">Puesto</span>
                         <span class="info-value">{{ $individualEmployee['position'] ?? '' }}</span>
                     </div>
+                    @if(!empty($individualEmployee['event_type']))
+                    <div class="info-item">
+                        <span class="info-label">Acontecimiento Identificado</span>
+                        <span class="info-value">{{ $individualEmployee['event_type'] }}</span>
+                    </div>
+                    @endif
                     <div class="info-item">
                         <span class="info-label">Resultado</span>
                         <span class="result-badge {{ $individualEmployee['requires_clinical'] ? 'clinical' : 'no-clinical' }}">

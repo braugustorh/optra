@@ -1608,15 +1608,19 @@ class Nom035 extends Page
     }
 
     // Metodo para exportar a PDF el reporte de Personal Identificado de html a pdf
-    public function downloadPdfShift()
+    public function downloadPdfShift(bool $onlyClinical = true)
     {
         $identifiedEmployees = IdentifiedCollaborator::where('norma_id', $this->norma->id)
             ->where('sede_id', $this->getCurrentSedeId())
             ->with(['user', 'traumaticEvent'])
             ->get();
+        $identifiedMap = $identifiedEmployees->keyBy('user_id');
+
         //Quiero traer los empleados que contestaron la encuesta de la Guía I
         $totalPersonsSurvey = TraumaticEventSurvey::where('norma_id', $this->norma->id)
             ->where('sede_id', $this->getCurrentSedeId())
+            ->orderBy('user_id')
+            ->with(['user.position', 'question.competence'])
             ->get();
 
         // Verificar si hay empleados identificados
@@ -1635,6 +1639,7 @@ class Nom035 extends Page
         $generalResults = [];
         $individualEmployees = [];
         $currentUserId = null;
+        $previousUserName = null;
         $section1 = 'No';
         $section2 = 0;
         $section3 = 0;
@@ -1644,19 +1649,26 @@ class Nom035 extends Page
             // Si cambiamos de usuario, guardamos los resultados del usuario anterior
             if ($currentUserId !== null && $currentUserId !== $item->user->id) {
                 // Guardar resultados del usuario anterior
+                $requiresClinical = ($section1 === 'Sí') && ($section2 >= 1 || $section3 >= 3 || $section4 >= 2);
+
                 $generalResults[] = [
                     'name' => $previousUserName,
                     'section1' => $section1,
                     'section2' => $section2 >= 1 ? 'Sí' : 'No',
                     'section3' => $section3 >= 3 ? 'Sí' : 'No',
                     'section4' => $section4 >= 2 ? 'Sí' : 'No',
-                    'requires_clinical' => $section2 >= 1 || $section3 >= 3 || $section4 >= 2,
+                    'requires_clinical' => $requiresClinical,
                 ];
-                $individualEmployees[]=[
-                    'name'=> $previousUserName,
-                    'position' => User::find($currentUserId)->position->name ?? 'No definido',
-                    'requires_clinical' => $section2 >= 1 || $section3 >= 3 || $section4 >= 2,
-                ];
+
+                if (!$onlyClinical || $requiresClinical) {
+                    $eventRecord = $identifiedMap->get($currentUserId)?->traumaticEvent;
+                    $individualEmployees[] = [
+                        'name' => $previousUserName,
+                        'position' => User::find($currentUserId)->position->name ?? 'No definido',
+                        'requires_clinical' => $requiresClinical,
+                        'event_type' => $eventRecord?->event_type?->label() ?? ($requiresClinical ? 'Identificado mediante Cuestionario Guía I' : null),
+                    ];
+                }
 
                 // Reiniciar variables para el nuevo usuario
                 $section1 = 'No';
@@ -1689,20 +1701,26 @@ class Nom035 extends Page
 
         // No olvides guardar el último usuario después del bucle
         if ($currentUserId !== null) {
+            $requiresClinical = ($section1 === 'Sí') && ($section2 >= 1 || $section3 >= 3 || $section4 >= 2);
+
             $generalResults[] = [
                 'name' => $previousUserName,
                 'section1' => $section1,
                 'section2' => $section2 >= 1 ? 'Sí' : 'No',
                 'section3' => $section3 >= 3 ? 'Sí' : 'No',
                 'section4' => $section4 >= 2 ? 'Sí' : 'No',
-                'requires_clinical' => $section2 >= 1 || $section3 >= 3 || $section4 >= 2,
+                'requires_clinical' => $requiresClinical,
             ];
 
-            $individualEmployees[]=[
-                'name'=> $previousUserName,
-                'position' => User::find($currentUserId)->position->name ?? 'No definido',
-                'requires_clinical' => $section2 >= 1 || $section3 >= 3 || $section4 >= 2,
-            ];
+            if (!$onlyClinical || $requiresClinical) {
+                $eventRecord = $identifiedMap->get($currentUserId)?->traumaticEvent;
+                $individualEmployees[] = [
+                    'name' => $previousUserName,
+                    'position' => User::find($currentUserId)->position->name ?? 'No definido',
+                    'requires_clinical' => $requiresClinical,
+                    'event_type' => $eventRecord?->event_type?->label() ?? ($requiresClinical ? 'Identificado mediante Cuestionario Guía I' : null),
+                ];
+            }
         }
         $user=auth()->user();
         $sedeId=$user->sede_id;
@@ -1776,6 +1794,11 @@ class Nom035 extends Page
             //return abort(500, 'Error al generar el PDF');
 
         }
+    }
+
+    public function downloadPdfShiftAll()
+    {
+        return $this->downloadPdfShift(onlyClinical: false);
     }
 
     public function reporteGeneralGIIIDownload(){

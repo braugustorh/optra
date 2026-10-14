@@ -1499,6 +1499,13 @@
             </x-filament::button>
 
             <x-filament::button
+                color="gray"
+                icon="fas-file-alt"
+                wire:click="downloadPdfShiftAll">
+                Expediente Completo
+            </x-filament::button>
+
+            <x-filament::button
                 color="primary"
                 icon="fas-download"
                 {{--:disabled="$norma->first()?->identifiedCollaborators()->where('type_identification','encuesta')->count() === 0"}

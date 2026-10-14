@@ -147,8 +147,7 @@ class TestGuiaI extends Page
                     's2p1' => 'required|in:si,no',
                     's2p2' => 'required|in:si,no',
                 ]);
-                $this->reqAtt = ($this->s2p1 === 'si'?1:0)+
-                                ($this->s2p2 === 'si'?1:0)>=1;
+                $this->reqAtt = $this->calculateRequiresAttention();
             } elseif ($this->page === 'Section III' && $this->s1p1 === 'si') {
                 $this->validate([
                     's3p1' => 'required|in:si,no',
@@ -159,17 +158,7 @@ class TestGuiaI extends Page
                     's3p6' => 'required|in:si,no',
                     's3p7' => 'required|in:si,no',
                 ]);
-                /* verificar si se requiere atención
-                    para la sección III debe de contestar "sí" a tres o más preguntas
-                    de la sección III, si no, no se requiere atención
-                */
-                $this->reqAtt = (($this->s3p1 === 'si' ? 1 : 0) +
-                                ($this->s3p2 === 'si' ? 1 : 0) +
-                                ($this->s3p3 === 'si' ? 1 : 0) +
-                                ($this->s3p4 === 'si' ? 1 : 0) +
-                                ($this->s3p5 === 'si' ? 1 : 0) +
-                                ($this->s3p6 === 'si' ? 1 : 0) +
-                                ($this->s3p7 === 'si' ? 1 : 0) >= 3)||$this->reqAtt;
+                $this->reqAtt = $this->calculateRequiresAttention();
 
             } elseif ($this->page === 'Section IV' && $this->s1p1 === 'si') {
                 $this->validate([
@@ -180,15 +169,7 @@ class TestGuiaI extends Page
                     's4p5' => 'required|in:si,no',
                 ]);
 
-                /* verificar si se requiere atención
-                *    para la sección IV debe de contestar "sí" a dos o más preguntas
-                *   de la sección IV, si no, no se requiere atención
-                */
-                $this->reqAtt = (($this->s4p1 === 'si' ? 1 : 0) +
-                                ($this->s4p2 === 'si' ? 1 : 0) +
-                                ($this->s4p3 === 'si' ? 1 : 0) +
-                                ($this->s4p4 === 'si' ? 1 : 0) +
-                                ($this->s4p5 === 'si' ? 1 : 0) >= 2)||$this->reqAtt;
+                $this->reqAtt = $this->calculateRequiresAttention();
 
                 if($this->reqAtt){
                     $this->finalMessage =
@@ -222,6 +203,7 @@ class TestGuiaI extends Page
             //Si responde NO en la primera sección, ir directamente al final
             if($this->page==='Section II' && $this->s1p1==='no'){
                 $this->page='Finish';
+                $this->reqAtt = false;
                 $this->finalMessage=
                     '<strong>No se han identificado</strong> factores de riesgo. Sin embargo, si en algún momento sientes que necesitas apoyo o tienes
                      inquietudes relacionadas con tu bienestar emocional, recuerda que puedes contactar al equipo de Recursos Humanos o llamar a la <strong>línea de atención en crisis</strong> al
@@ -237,6 +219,31 @@ class TestGuiaI extends Page
         } elseif ($direction === 'previous' && $currentIndex > 0) {
             $this->page = $sections[$currentIndex - 1];
         }
+    }
+
+    /**
+     * Evalúa las respuestas capturadas de manera pura e idempotente.
+     * Retorna true únicamente si cumple las condiciones oficiales de la NOM-035.
+     */
+    private function calculateRequiresAttention(): bool
+    {
+        if ($this->s1p1 !== 'si') {
+            return false;
+        }
+
+        // Sección II: Recuerdos persistentes (≥ 1)
+        $s2 = ($this->s2p1 === 'si' ? 1 : 0) + ($this->s2p2 === 'si' ? 1 : 0);
+
+        // Sección III: Esfuerzo por evitar circunstancias (≥ 3)
+        $s3 = ($this->s3p1 === 'si' ? 1 : 0) + ($this->s3p2 === 'si' ? 1 : 0) + ($this->s3p3 === 'si' ? 1 : 0) +
+              ($this->s3p4 === 'si' ? 1 : 0) + ($this->s3p5 === 'si' ? 1 : 0) + ($this->s3p6 === 'si' ? 1 : 0) +
+              ($this->s3p7 === 'si' ? 1 : 0);
+
+        // Sección IV: Afectación (≥ 2)
+        $s4 = ($this->s4p1 === 'si' ? 1 : 0) + ($this->s4p2 === 'si' ? 1 : 0) + ($this->s4p3 === 'si' ? 1 : 0) +
+              ($this->s4p4 === 'si' ? 1 : 0) + ($this->s4p5 === 'si' ? 1 : 0);
+
+        return ($s2 >= 1 || $s3 >= 3 || $s4 >= 2);
     }
 
     public function finish(): void
@@ -320,10 +327,10 @@ class TestGuiaI extends Page
             's4p5' => $this->s4p5,
         ];
 
-// Obtener todas las preguntas del tipo de evaluación "Nom035: Guía I"
+// Obtener todas las preguntas del tipo de evaluación "Nom035: Guía I" en orden determinista
         $questions = Question::whereHas('evaluationType', function ($query) {
-            $query->where('name', 'like', 'Nom035: Guía I');
-        })->get();
+            $query->where('name', 'Nom035: Guía I');
+        })->orderBy('id', 'asc')->get();
 
 // Mapear las preguntas con posiciones específicas
         $questionMap = [];
@@ -402,8 +409,9 @@ class TestGuiaI extends Page
                     'identified_at' => now(),
                 ]
             );
-        } elseif ($userIdentified) {
-            // Si no requiere atención pero existe un registro, lo eliminamos
+        } elseif ($userIdentified && $userIdentified->type_identification === 'encuesta') {
+            // Si no requiere atención y fue registrado previamente por encuesta, lo eliminamos.
+            // Se resguardan registros manuales creados previamente por RH.
             $userIdentified->delete();
         }
         // Aquí puedes implementar la lógica para guardar las respuestas en la base de datos
