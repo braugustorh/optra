@@ -67,7 +67,7 @@ class PsychometricDashboard extends Page implements HasTable
     //Poner función para que solo sea visible para RH Corp
     public static function canView(): bool
     {
-        return \auth()->user()->hasAnyRole(['Administrador','RH Corp','RH','Reclutador']);
+        return \auth()->user()->hasAnyRole(['Administrador','RH Corp','RH','Reclutador','Reclutador Jr']);
 
     }
     public static function shouldRegisterNavigation(): bool
@@ -81,12 +81,17 @@ class PsychometricDashboard extends Page implements HasTable
     {
         return $table
             ->query(
-                PsychometricEvaluation::query()->with(['evaluable', 'evaluationType'])
+                PsychometricEvaluation::query()
+                    ->when(auth()->user()->hasRole('Reclutador Jr'), function ($query) {
+                        $query->where('evaluable_type', Candidate::class);
+                    })
+                    ->with(['evaluable', 'evaluationType'])
                     ->latest('created_at')
             )
             ->columns([
                 Tables\Columns\TextColumn::make('evaluable.name')
                     ->label('Evaluado')
+                    ->formatStateUsing(fn ($state, PsychometricEvaluation $record) => $record->getEvaluatedName())
                     ->searchable()
                     ->sortable()
                     // Agrega el subtítulo (Candidato vs Colaborador)
@@ -192,6 +197,60 @@ class PsychometricDashboard extends Page implements HasTable
                     ->visible(fn (PsychometricEvaluation $record) => $record->evaluable_type === \App\Models\Candidate::class)
                     ->url(fn (PsychometricEvaluation $record) => \App\Filament\Resources\CandidateResource::getUrl('view', ['record' => $record->evaluable_id]))
                     ->openUrlInNewTab(),
+
+                // ACCIÓN 5: Reactivar / Reenviar Batería
+                Tables\Actions\Action::make('resend_batch')
+                    ->label('Reactivar / Reenviar')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->modalHeading('Reactivar y Reenviar Evaluación')
+                    ->modalDescription('Extiende la vigencia del enlace y reenvía el correo al evaluado.')
+                    ->form([
+                        Forms\Components\TextInput::make('extension_days')
+                            ->label('Días de vigencia adicionales')
+                            ->numeric()
+                            ->default(7)
+                            ->minValue(1)
+                            ->required(),
+                        Forms\Components\Toggle::make('reset_answers')
+                            ->label('¿Reiniciar respuestas y progreso?')
+                            ->helperText('Si se activa, se borrarán las respuestas previas para comenzar desde cero. Si se desactiva, conservará su progreso.')
+                            ->default(false),
+                        Forms\Components\Toggle::make('regenerate_token')
+                            ->label('Generar nuevo enlace de acceso')
+                            ->helperText('Invalida el enlace anterior y genera uno nuevo por seguridad.')
+                            ->default(true),
+                    ])
+                    ->action(function (PsychometricEvaluation $record, array $data) {
+                        $result = PsychometricEvaluation::reactivateBatch(
+                            batchId: $record->batch_id,
+                            extensionDays: (int) $data['extension_days'],
+                            resetAnswers: (bool) $data['reset_answers'],
+                            regenerateToken: (bool) $data['regenerate_token'],
+                        );
+                        if ($result['success']) {
+                            Notification::make()->title($result['message'])->success()->send();
+                        } else {
+                            Notification::make()->title($result['message'])->danger()->send();
+                        }
+                    }),
+
+                // ACCIÓN 6: Eliminar Batería Mal Asignada
+                Tables\Actions\Action::make('delete_batch')
+                    ->label('Eliminar Batería')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('¿Eliminar batería de evaluaciones?')
+                    ->modalDescription('Se eliminarán todas las evaluaciones correspondientes a este lote y sus respuestas asociadas. Esta acción no se puede deshacer.')
+                    ->action(function (PsychometricEvaluation $record) {
+                        $result = PsychometricEvaluation::deleteBatch($record->batch_id);
+                        if ($result['success']) {
+                            Notification::make()->title($result['message'])->success()->send();
+                        } else {
+                            Notification::make()->title($result['message'])->danger()->send();
+                        }
+                    }),
             ]);
     }
 
@@ -205,6 +264,7 @@ class PsychometricDashboard extends Page implements HasTable
                 ->label('Asignar a Colaborador')
                 ->icon('heroicon-o-identification')
                 ->color('primary')
+                ->hidden(fn () => auth()->user()->hasRole('Reclutador Jr'))
                 ->form([
                     // 1. Selector de Sede (Visible y editable solo para Admin/RH Corp)
                     Forms\Components\Select::make('sede_id')
@@ -305,7 +365,11 @@ class PsychometricDashboard extends Page implements HasTable
                     // Seleccionar al Candidato (Candidate)
                     Select::make('candidate_id')
                         ->label('Candidato')
-                        ->options(Candidate::all()->pluck('name', 'id'))
+                        ->options(function () {
+                            return Candidate::orderBy('name')->get()->mapWithKeys(fn ($c) => [
+                                $c->id => "{$c->name}" . ($c->email ? " ({$c->email})" : ''),
+                            ]);
+                        })
                         ->searchable()
                         ->required()
                         ->createOptionForm([
@@ -355,6 +419,7 @@ class PsychometricDashboard extends Page implements HasTable
                         evaluableType: Candidate::class,
                         evaluationTypeIds: $data['evaluation_type_ids'],
                         puesto: $data['puesto'] ?? null,
+                        expiresAt: $data['expires_at'] ?? null,
                     );
                 }),
 
@@ -373,10 +438,17 @@ class PsychometricDashboard extends Page implements HasTable
                     // 1. Tipo de persona
                     Forms\Components\Select::make('evaluable_type')
                         ->label('Tipo de persona')
-                        ->options([
-                            'user'      => '👥 Colaborador Interno',
-                            'candidate' => '🎯 Candidato Externo',
-                        ])
+                        ->options(function () {
+                            if (auth()->user()->hasRole('Reclutador Jr')) {
+                                return ['candidate' => '🎯 Candidato Externo'];
+                            }
+                            return [
+                                'user'      => '👥 Colaborador Interno',
+                                'candidate' => '🎯 Candidato Externo',
+                            ];
+                        })
+                        ->default(auth()->user()->hasRole('Reclutador Jr') ? 'candidate' : null)
+                        ->disabled(fn () => auth()->user()->hasRole('Reclutador Jr'))
                         ->required()
                         ->live()
                         ->afterStateUpdated(function (Forms\Set $set) {
@@ -394,10 +466,12 @@ class PsychometricDashboard extends Page implements HasTable
                                 return User::orderBy('name')
                                     ->get()
                                     ->mapWithKeys(fn ($u) => [
-                                        $u->id => trim("{$u->name} {$u->first_name} {$u->last_name}"),
+                                        $u->id => trim("{$u->name} {$u->first_name} {$u->last_name}") . ($u->email ? " ({$u->email})" : ''),
                                     ]);
                             }
-                            return Candidate::orderBy('name')->pluck('name', 'id');
+                            return Candidate::orderBy('name')->get()->mapWithKeys(fn ($c) => [
+                                $c->id => "{$c->name}" . ($c->email ? " ({$c->email})" : ''),
+                            ]);
                         })
                         ->searchable()
                         ->required()
@@ -650,30 +724,36 @@ class PsychometricDashboard extends Page implements HasTable
 
     public function getStats(): array
     {
-        $totalUsers = User::count();
+        $isJr = auth()->user()->hasRole('Reclutador Jr');
+        $totalUsers = $isJr ? 0 : User::count();
         $totalCandidates = Candidate::count();
+
+        $baseQuery = PsychometricEvaluation::query();
+        if ($isJr) {
+            $baseQuery->where('evaluable_type', Candidate::class);
+        }
 
         return [
             [
                 'label' => 'Evaluaciones Activas',
-                'value' => PsychometricEvaluation::whereIn('status', ['assigned', 'started', 'in_progress'])->count(),
-                'description' => "{$totalUsers} Colaboradores | {$totalCandidates} Candidatos",
+                'value' => (clone $baseQuery)->whereIn('status', ['assigned', 'started', 'in_progress'])->count(),
+                'description' => $isJr ? "{$totalCandidates} Candidatos" : "{$totalUsers} Colaboradores | {$totalCandidates} Candidatos",
                 'color' => 'primary',
             ],
             [
                 'label' => 'Completadas Hoy',
-                'value' => PsychometricEvaluation::where('status', 'completed')
+                'value' => (clone $baseQuery)->where('status', 'completed')
                     ->whereDate('completed_at', today())->count(),
                 'color' => 'success',
             ],
             [
                 'label' => 'Pendientes',
-                'value' => PsychometricEvaluation::where('status', 'assigned')->count(),
+                'value' => (clone $baseQuery)->where('status', 'assigned')->count(),
                 'color' => 'warning',
             ],
             [
                 'label' => 'Total Personas',
-                'value' => $totalUsers + $totalCandidates,
+                'value' => $isJr ? $totalCandidates : ($totalUsers + $totalCandidates),
                 'color' => 'info',
             ],
         ];
@@ -695,6 +775,9 @@ class PsychometricDashboard extends Page implements HasTable
     public function getFilteredEvaluations()
     {
         $query = PsychometricEvaluation::with(['evaluable', 'evaluationType'])
+            ->when(auth()->user()->hasRole('Reclutador Jr'), function ($q) {
+                $q->where('evaluable_type', Candidate::class);
+            })
             ->whereIn('status', ['assigned', 'started', 'in_progress', 'completed'])
             ->latest();
 
@@ -732,8 +815,8 @@ class PsychometricDashboard extends Page implements HasTable
         $this->evaluableTypeFilter = '';
     }
     public function mount(){
-        //Mandar un erro 403 si no tiene el rol de RH Corp y Administrador
-        if (!\auth()->user()?->hasAnyRole('RH Corp','Administrador','Super Administrador','Reclutador')) {
+        //Mandar un error 403 si no tiene los roles permitidos
+        if (!\auth()->user()?->hasAnyRole('RH Corp','Administrador','Super Administrador','Reclutador','Reclutador Jr')) {
             abort(403, 'No tienes permiso para acceder a este recurso.');
         }
     }
@@ -791,12 +874,12 @@ class PsychometricDashboard extends Page implements HasTable
     // FUNCIÓN AUXILIAR (Para no repetir código)
     // -----------------------------------------------------------------------
     // Esta función encapsula la lógica "difícil" para que tus acciones queden limpias
-    protected function createBatchEvaluations($evaluableId, $evaluableType, $evaluationTypeIds, $puesto = null)
+    protected function createBatchEvaluations($evaluableId, $evaluableType, $evaluationTypeIds, $puesto = null, $expiresAt = null)
     {
         $batchId = Str::uuid();
         $accessToken = Str::random(40);
 
-        DB::transaction(function () use ($evaluableId, $evaluableType, $evaluationTypeIds, $batchId, $accessToken, $puesto) {
+        DB::transaction(function () use ($evaluableId, $evaluableType, $evaluationTypeIds, $batchId, $accessToken, $puesto, $expiresAt) {
             foreach ($evaluationTypeIds as $typeId) {
                 PsychometricEvaluation::create([
                     'evaluations_type_id' => $typeId,
@@ -808,6 +891,7 @@ class PsychometricDashboard extends Page implements HasTable
                     'puesto'              => $puesto,
                     'status'              => 'assigned',
                     'assigned_at'         => now(),
+                    'expires_at'          => $expiresAt,
                 ]);
             }
 
@@ -822,7 +906,7 @@ class PsychometricDashboard extends Page implements HasTable
 
         // 3. ENVÍO DEL CORREO AL USUARIO
         if ($recipient && $recipient->email) {
-            \Mail::to($recipient->email)->send(new EvaluationAssignedMail($recipient, $accessToken));
+            \Mail::to($recipient->email)->send(new EvaluationAssignedMail($recipient, $accessToken, $expiresAt));
 
             $msg = 'Evaluaciones asignadas y correo enviado exitosamente.';
         } else {
@@ -830,7 +914,7 @@ class PsychometricDashboard extends Page implements HasTable
         }
         Notification::make()
             ->title('Batería asignada correctamente')
-            ->body( $msg) //
+            ->body( $msg)
             ->success()
             ->send();
 

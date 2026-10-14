@@ -16,8 +16,7 @@ class EvaluationsRelationManager extends RelationManager
 
     public function isReadOnly(): bool
     {
-        // Las evaluaciones se asignan desde el Dashboard de Psicometrías, no aquí.
-        return true;
+        return false;
     }
 
     public function form(Form $form): Form
@@ -28,7 +27,10 @@ class EvaluationsRelationManager extends RelationManager
     public function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->with('evaluationType'))
+            ->modifyQueryUsing(function (Builder $query) {
+                $candidateId = $this->getOwnerRecord()->id;
+                return $query->orWhere('candidate_origin_id', $candidateId)->with('evaluationType');
+            })
             ->recordTitleAttribute('id')
             ->columns([
                 Tables\Columns\TextColumn::make('puesto')
@@ -54,6 +56,10 @@ class EvaluationsRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('assigned_at')
                     ->label('Asignada')
                     ->date(),
+                Tables\Columns\TextColumn::make('expires_at')
+                    ->label('Vencimiento')
+                    ->date()
+                    ->placeholder('—'),
                 Tables\Columns\TextColumn::make('completed_at')
                     ->label('Completada')
                     ->date(),
@@ -73,6 +79,58 @@ class EvaluationsRelationManager extends RelationManager
             ->emptyStateHeading('Sin evaluaciones asignadas')
             ->emptyStateDescription('Asigna una batería psicométrica desde el Dashboard de Psicometrías.')
             ->emptyStateIcon('heroicon-o-clipboard-document-check')
-            ->actions([]);
+            ->actions([
+                Tables\Actions\Action::make('resend_batch')
+                    ->label('Reactivar / Reenviar')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->modalHeading('Reactivar y Reenviar Evaluación')
+                    ->modalDescription('Extiende la vigencia del enlace y reenvía el correo al evaluado.')
+                    ->form([
+                        \Filament\Forms\Components\TextInput::make('extension_days')
+                            ->label('Días de vigencia adicionales')
+                            ->numeric()
+                            ->default(7)
+                            ->minValue(1)
+                            ->required(),
+                        \Filament\Forms\Components\Toggle::make('reset_answers')
+                            ->label('¿Reiniciar respuestas y progreso?')
+                            ->helperText('Si se activa, se borrarán las respuestas previas para comenzar desde cero. Si se desactiva, conservará su progreso.')
+                            ->default(false),
+                        \Filament\Forms\Components\Toggle::make('regenerate_token')
+                            ->label('Generar nuevo enlace de acceso')
+                            ->helperText('Invalida el enlace anterior y genera uno nuevo por seguridad.')
+                            ->default(true),
+                    ])
+                    ->action(function ($record, array $data) {
+                        $result = \App\Models\PsychometricEvaluation::reactivateBatch(
+                            batchId: $record->batch_id,
+                            extensionDays: (int) $data['extension_days'],
+                            resetAnswers: (bool) $data['reset_answers'],
+                            regenerateToken: (bool) $data['regenerate_token'],
+                        );
+                        if ($result['success']) {
+                            \Filament\Notifications\Notification::make()->title($result['message'])->success()->send();
+                        } else {
+                            \Filament\Notifications\Notification::make()->title($result['message'])->danger()->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('delete_batch')
+                    ->label('Eliminar Batería')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('¿Eliminar batería de evaluaciones?')
+                    ->modalDescription('Se eliminarán todas las evaluaciones correspondientes a este lote y sus respuestas asociadas. Esta acción no se puede deshacer.')
+                    ->action(function ($record) {
+                        $result = \App\Models\PsychometricEvaluation::deleteBatch($record->batch_id);
+                        if ($result['success']) {
+                            \Filament\Notifications\Notification::make()->title($result['message'])->success()->send();
+                        } else {
+                            \Filament\Notifications\Notification::make()->title($result['message'])->danger()->send();
+                        }
+                    }),
+            ]);
     }
 }

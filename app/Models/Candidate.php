@@ -17,6 +17,7 @@ class Candidate extends Model
         'position_applied',
         'notes',
         'status',
+        'user_id',
     ];
 
     /**
@@ -41,9 +42,19 @@ class Candidate extends Model
         self::STATUS_ARCHIVADO     => 'gray',
     ];
 
+    public function user(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
     public function psychometricEvaluations(): MorphMany
     {
         return $this->morphMany(PsychometricEvaluation::class, 'evaluable');
+    }
+
+    public function originatedEvaluations(): HasMany
+    {
+        return $this->hasMany(PsychometricEvaluation::class, 'candidate_origin_id');
     }
 
     public function comments(): HasMany
@@ -70,7 +81,13 @@ class Candidate extends Model
     public function effectivePosition(): ?string
     {
         return $this->position_applied
-            ?? $this->psychometricEvaluations()->latest('assigned_at')->value('puesto');
+            ?? PsychometricEvaluation::where(function ($q) {
+                $q->where('candidate_origin_id', $this->id)
+                  ->orWhere(function ($sub) {
+                      $sub->where('evaluable_type', self::class)
+                          ->where('evaluable_id', $this->id);
+                  });
+            })->latest('assigned_at')->value('puesto');
     }
 
     public function statusLabel(): string
@@ -101,5 +118,85 @@ class Candidate extends Model
             'to_status'   => $newStatus,
             'changed_by'  => $userId ?? auth()->id(),
         ]);
+    }
+
+    /**
+     * Procesa la contratación del candidato con opción de vincular a un usuario
+     * y transferir sus evaluaciones psicométricas al expediente del colaborador.
+     */
+    public function matchAndContract(string $newStatus, array $options = [], ?int $changedBy = null): void
+    {
+        \Illuminate\Support\Facades\DB::transaction(function () use ($newStatus, $options, $changedBy) {
+            $userId = $this->user_id;
+
+            if ($newStatus === self::STATUS_CONTRATADO) {
+                $mode = $options['colaborador_mode'] ?? 'none';
+
+                if ($mode === 'existing' && !empty($options['user_id'])) {
+                    $userId = (int) $options['user_id'];
+                } elseif ($mode === 'new') {
+                    if (!$userId) {
+                        $existingUser = User::where('email', $this->email)->first();
+                        if ($existingUser) {
+                            $userId = $existingUser->id;
+                        } else {
+                            $parts = preg_split('/\s+/', trim($this->name));
+                            $count = count($parts);
+                            if ($count === 1) {
+                                $name = $parts[0];
+                                $firstName = null;
+                                $lastName = null;
+                            } elseif ($count === 2) {
+                                $name = $parts[0];
+                                $firstName = $parts[1];
+                                $lastName = null;
+                            } elseif ($count === 3) {
+                                $name = $parts[0];
+                                $firstName = $parts[1];
+                                $lastName = $parts[2];
+                            } else {
+                                $lastName = array_pop($parts);
+                                $firstName = array_pop($parts);
+                                $name = implode(' ', $parts);
+                            }
+
+                            $user = User::create([
+                                'name'       => $name,
+                                'first_name' => $firstName,
+                                'last_name'  => $lastName,
+                                'email'      => $this->email,
+                                'phone'      => $this->phone,
+                                'password'   => bcrypt(\Illuminate\Support\Str::random(16)),
+                            ]);
+                            if (\Spatie\Permission\Models\Role::where('name', 'Colaborador')->exists()) {
+                                $user->assignRole('Colaborador');
+                            }
+                            $userId = $user->id;
+                        }
+                    }
+                }
+
+                $this->user_id = $userId;
+                $this->save();
+
+                // Traspaso de psicometría si se solicita
+                if (!empty($options['transfer_psychometrics']) && $userId) {
+                    $evaluations = PsychometricEvaluation::where(function ($q) {
+                        $q->where('evaluable_type', self::class)
+                          ->where('evaluable_id', $this->id);
+                    })->get();
+
+                    foreach ($evaluations as $eval) {
+                        $eval->update([
+                            'candidate_origin_id' => $this->id,
+                            'evaluable_type'      => User::class,
+                            'evaluable_id'        => $userId,
+                        ]);
+                    }
+                }
+            }
+
+            $this->changeStatus($newStatus, $changedBy);
+        });
     }
 }

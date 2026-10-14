@@ -66,9 +66,13 @@ class PsychometricEvaluationResource extends Resource
                             ->options(function (Forms\Get $get) {
                                 $type = $get('evaluable_type');
                                 if ($type === User::class) {
-                                    return User::pluck('name', 'id')->toArray();
+                                    return User::orderBy('name')->get()->mapWithKeys(fn ($u) => [
+                                        $u->id => trim("{$u->name} {$u->first_name} {$u->last_name}") . ($u->email ? " ({$u->email})" : ''),
+                                    ])->toArray();
                                 } elseif ($type === Candidate::class) {
-                                    return Candidate::pluck('name', 'id')->toArray();
+                                    return Candidate::orderBy('name')->get()->mapWithKeys(fn ($c) => [
+                                        $c->id => "{$c->name}" . ($c->email ? " ({$c->email})" : ''),
+                                    ])->toArray();
                                 }
                                 return [];
                             })

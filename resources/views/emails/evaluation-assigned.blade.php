@@ -26,6 +26,14 @@
 
         <p>Por favor, asegúrate de contar con tiempo suficiente (aprox. 45-60 minutos) y una conexión estable a internet antes de comenzar.</p>
 
+        @if(!empty($expiresAt))
+        <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; margin: 20px 0; border-radius: 4px;">
+            <p style="margin: 0; color: #92400e; font-size: 14px; font-weight: bold;">
+                📅 Fecha límite para completar tus evaluaciones: {{ \Carbon\Carbon::parse($expiresAt)->format('d/m/Y') }}
+            </p>
+        </div>
+        @endif
+
         <div style="text-align: center;">
             <a href="{{ route('evaluation.landing', ['token' => $token]) }}" class="button">
                 Iniciar Evaluación

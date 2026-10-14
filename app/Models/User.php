@@ -212,4 +212,9 @@ class User extends Authenticatable implements FilamentUser
 
 
 
+    public function getFullNameAttribute(): string
+    {
+        $parts = array_filter([$this->name, $this->first_name, $this->last_name]);
+        return implode(' ', $parts);
+    }
 }

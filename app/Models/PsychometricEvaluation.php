@@ -34,6 +34,7 @@ class PsychometricEvaluation extends Model
         'interpretation_document_url',
         'elapsed_seconds',
         'puesto',
+        'candidate_origin_id',
         'current_series_id',
         'current_series_started_at',
         'is_invalidated',
@@ -59,6 +60,11 @@ class PsychometricEvaluation extends Model
     public function evaluable(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function candidateOrigin(): BelongsTo
+    {
+        return $this->belongsTo(Candidate::class, 'candidate_origin_id');
     }
 
     public function assignedBy(): BelongsTo
@@ -100,6 +106,11 @@ class PsychometricEvaluation extends Model
 
     public function getEvaluatedName(): string
     {
+        if ($this->evaluable instanceof User) {
+            $fullName = trim("{$this->evaluable->name} {$this->evaluable->first_name} {$this->evaluable->last_name}");
+            return $fullName !== '' ? $fullName : ($this->evaluable->name ?? 'N/A');
+        }
+
         return $this->evaluable->name ?? 'N/A';
     }
 
@@ -216,6 +227,91 @@ class PsychometricEvaluation extends Model
 
         $this->update(['response_summary' => $summary]);
         return $summary;
+    }
+
+    /**
+     * Reactiva una batería de evaluaciones, extiende su fecha y opcionalmente reinicia respuestas o regenera token.
+     */
+    public static function reactivateBatch(string $batchId, int $extensionDays = 7, bool $resetAnswers = false, bool $regenerateToken = true): array
+    {
+        $evaluations = self::where('batch_id', $batchId)->get();
+
+        if ($evaluations->isEmpty()) {
+            return ['success' => false, 'message' => 'No se encontraron evaluaciones para esta batería.'];
+        }
+
+        $newExpiresAt = now()->addDays($extensionDays);
+        $first = $evaluations->first();
+        $token = $regenerateToken ? \Illuminate\Support\Str::random(40) : ($first->access_token ?: \Illuminate\Support\Str::random(40));
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($evaluations, $newExpiresAt, $token, $resetAnswers) {
+            if ($resetAnswers) {
+                \App\Models\EvaluationUserAnswer::whereIn('psychometric_evaluation_id', $evaluations->pluck('id'))->delete();
+
+                foreach ($evaluations as $eval) {
+                    $eval->update([
+                        'status'                    => 'assigned',
+                        'progress'                  => 0,
+                        'started_at'                => null,
+                        'completed_at'              => null,
+                        'elapsed_seconds'           => 0,
+                        'current_series_id'         => null,
+                        'current_series_started_at' => null,
+                        'is_invalidated'            => false,
+                        'invalidated_reason'        => null,
+                        'access_token'              => $token,
+                        'expires_at'                => $newExpiresAt,
+                    ]);
+                }
+            } else {
+                foreach ($evaluations as $eval) {
+                    $update = [
+                        'access_token' => $token,
+                        'expires_at'   => $newExpiresAt,
+                    ];
+
+                    if ($eval->status !== 'completed') {
+                        $update['status']             = $eval->status === 'expired' ? 'assigned' : $eval->status;
+                        $update['is_invalidated']     = false;
+                        $update['invalidated_reason'] = null;
+                    }
+
+                    $eval->update($update);
+                }
+            }
+        });
+
+        // Reenviar correo si el evaluado tiene email
+        $recipient = $first->evaluable;
+        if ($recipient && $recipient->email) {
+            \Illuminate\Support\Facades\Mail::to($recipient->email)
+                ->send(new \App\Mail\EvaluationAssignedMail($recipient, $token, $newExpiresAt));
+            $msg = 'Batería reactivada y correo reenviado con éxito.';
+        } else {
+            $msg = 'Batería reactivada con éxito (sin envío de correo: evaluado sin email).';
+        }
+
+        return ['success' => true, 'message' => $msg];
+    }
+
+    /**
+     * Elimina limpiamente una batería completa de evaluaciones.
+     */
+    public static function deleteBatch(string $batchId): array
+    {
+        $evaluations = self::where('batch_id', $batchId)->get();
+
+        if ($evaluations->isEmpty()) {
+            return ['success' => false, 'message' => 'No se encontró la batería especificada.'];
+        }
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($evaluations) {
+            foreach ($evaluations as $eval) {
+                $eval->delete();
+            }
+        });
+
+        return ['success' => true, 'message' => 'Batería de evaluaciones eliminada correctamente.'];
     }
 
 }

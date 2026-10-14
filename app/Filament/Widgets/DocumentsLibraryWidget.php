@@ -16,7 +16,7 @@ class DocumentsLibraryWidget extends Widget
     // Hacer el widget visible solo para usuarios con roles RH y RH Corp
     public static function canView(): bool
     {
-        return auth()->check() && auth()->user()->hasAnyRole(['RH', 'RH Corp']);
+        return auth()->check() && auth()->user()->hasAnyRole(['RH', 'RH Corp', 'Administrador','Super Administrador']);
     }
     // Obtener datos para el widget (ejemplo)
     public function getViewData(): array
@@ -50,11 +50,9 @@ class DocumentsLibraryWidget extends Widget
                     $mes = strtoupper(\Carbon\Carbon::now()->locale('es')->isoFormat('MMMM')); // mes en mayúsculas
                     $anio = now()->format('Y'); // año a 4 dígitos
                     $user = auth()->user();
-                    if ($user->sede_id===3){
-                        $sede= "ADMINISTRADORA DE CENTRALES Y TERMINALES";
-                    }else{
+
                         $sede = auth()->user()->sede?->company_name ?? 'Sin Razón Social';
-                    }
+
                     // 2. Cargar la plantilla
                     $templatePath = storage_path('app/plantillas/protocolo-optra-CT.docx');
 

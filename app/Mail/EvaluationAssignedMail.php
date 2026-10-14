@@ -12,10 +12,11 @@ class EvaluationAssignedMail extends Mailable
 {
     use Queueable, SerializesModels;
 
-    // Recibimos la entidad (User o Candidate) y el token
+    // Recibimos la entidad (User o Candidate), el token y opcionalmente la fecha límite
     public function __construct(
         public $evaluable,
-        public string $token
+        public string $token,
+        public $expiresAt = null
     ) {}
 
     public function envelope(): Envelope
