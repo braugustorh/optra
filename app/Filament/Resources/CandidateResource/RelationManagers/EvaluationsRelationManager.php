@@ -14,6 +14,17 @@ class EvaluationsRelationManager extends RelationManager
     protected static ?string $title = 'Evaluaciones (agrupadas por batería)';
     protected static ?string $icon = 'heroicon-o-clipboard-document-check';
 
+    public static function canViewForRecord(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): bool
+    {
+        return (bool) auth()->user()?->hasAnyRole([
+            'RH Corp',
+            'Reclutador',
+            'Reclutador Jr',
+            'Administrador',
+            'Super Administrador',
+        ]);
+    }
+
     public function isReadOnly(): bool
     {
         return false;
