@@ -35,7 +35,8 @@ class PortfolioResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-square-3-stack-3d';
     public static function getNavigationGroup(): ?string
     {
-        if (auth()->user()?->hasAnyRole(['RH Corp', 'Administrador', 'Super Administrador', 'Apoyo Expedientes'])) {
+        if (auth()->user()?->hasAnyRole(['RH Corp', 'Administrador', 'Super Administrador', 'Apoyo Expedientes',
+            'Reclutador','Reclutador Jr','Apoyo Expedientes'])) {
             return 'Colaboradores';
         }
 
@@ -50,7 +51,8 @@ class PortfolioResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return (\auth()->user()->hasAnyRole('RH', 'RH Corp', 'Administrador', 'Supervisor', 'Colaborador', 'Visor', 'Gerente', 'Operativo', 'Apoyo Expedientes'));
+        return (\auth()->user()->hasAnyRole('RH', 'RH Corp', 'Administrador', 'Supervisor',
+            'Colaborador', 'Visor','Reclutador','Reclutador Jr', 'Gerente', 'Operativo', 'Apoyo Expedientes'));
     }
 
     public static function canCreate(): bool
