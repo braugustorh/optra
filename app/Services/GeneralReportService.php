@@ -206,9 +206,11 @@ class GeneralReportService
             'ai_raw'       => is_string($aiResponse) ? $aiResponse : json_encode($aiResponse, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE),
         ];
 
-        // Persistir el reporte como snapshot histórico si el evaluado es un Candidato.
+        // Persistir el reporte como snapshot histórico si el evaluado es un Candidato o Colaborador.
         if ($evaluable instanceof \App\Models\Candidate) {
             $this->persistSnapshot($evaluable, $batchId, $result);
+        } elseif ($evaluable instanceof \App\Models\User) {
+            $this->persistSnapshotForUser($evaluable, $batchId, $result);
         }
 
         return $result;
@@ -223,6 +225,35 @@ class GeneralReportService
     {
         return \App\Models\CandidateReportSnapshot::create([
             'candidate_id'            => $candidate->id,
+            'user_id'                 => $candidate->user_id,
+            'batch_id'                => $batchId,
+            'puesto_original'         => $result['puesto_original'] ?? null,
+            'puesto_evaluado'         => $result['puesto_evaluado'] ?? 'General',
+            'ajuste_global'           => $result['ajuste_global'] ?? null,
+            'ajuste_relativo'         => $result['ajuste_relativo'] ?? null,
+            'dictamen'                => $result['dictamen_calculado'] ?? null,
+            'competencias_json'       => $result['competencias'] ?? [],
+            'competencias_ideal_json' => $result['competencias_ideal'] ?? [],
+            'ai_report_json'          => $result['ai_report'] ?? null,
+            'cleaver_ideal_json'      => $result['cleaver_ideal'] ?? [],
+            'generated_by'            => auth()->id(),
+        ]);
+    }
+
+    /**
+     * Guarda un reporte generado como registro histórico ligado al colaborador (User),
+     * permitiendo consultar y comparar sus reportes en su expediente de colaborador.
+     */
+    protected function persistSnapshotForUser(\App\Models\User $user, string $batchId, array $result): \App\Models\CandidateReportSnapshot
+    {
+        $candidateId = \App\Models\PsychometricEvaluation::where('batch_id', $batchId)
+            ->whereNotNull('candidate_origin_id')
+            ->value('candidate_origin_id')
+            ?? \App\Models\Candidate::where('user_id', $user->id)->value('id');
+
+        return \App\Models\CandidateReportSnapshot::create([
+            'candidate_id'            => $candidateId,
+            'user_id'                 => $user->id,
             'batch_id'                => $batchId,
             'puesto_original'         => $result['puesto_original'] ?? null,
             'puesto_evaluado'         => $result['puesto_evaluado'] ?? 'General',

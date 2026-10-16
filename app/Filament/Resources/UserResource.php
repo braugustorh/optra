@@ -922,6 +922,8 @@ class UserResource extends Resource
         return [
             RelationManagers\PortfolioRelationManager::class,
             RelationManagers\TransfersRelationManager::class,
+            RelationManagers\ReportSnapshotsRelationManager::class,
+            RelationManagers\EvaluationsRelationManager::class,
         ];
     }
     public static function getWidgets(): array

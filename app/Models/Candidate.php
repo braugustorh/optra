@@ -101,6 +101,16 @@ class Candidate extends Model
     }
 
     /**
+     * Scope para candidatos disponibles para evaluación psicométrica externa.
+     * Excluye a los candidatos que ya fueron contratados o vinculados como colaboradores.
+     */
+    public function scopeAvailableForEvaluation($query)
+    {
+        return $query->where('status', '!=', self::STATUS_CONTRATADO)
+                     ->whereNull('user_id');
+    }
+
+    /**
      * Cambia el estatus del candidato dejando registro en la bitácora.
      */
     public function changeStatus(string $newStatus, ?int $userId = null): void
@@ -193,6 +203,11 @@ class Candidate extends Model
                             'evaluable_id'        => $userId,
                         ]);
                     }
+
+                    // Traspaso de snapshots de reportes previos al colaborador
+                    CandidateReportSnapshot::where('candidate_id', $this->id)->update([
+                        'user_id' => $userId,
+                    ]);
                 }
             }
 

@@ -70,7 +70,7 @@ class PsychometricEvaluationResource extends Resource
                                         $u->id => trim("{$u->name} {$u->first_name} {$u->last_name}") . ($u->email ? " ({$u->email})" : ''),
                                     ])->toArray();
                                 } elseif ($type === Candidate::class) {
-                                    return Candidate::orderBy('name')->get()->mapWithKeys(fn ($c) => [
+                                    return Candidate::availableForEvaluation()->orderBy('name')->get()->mapWithKeys(fn ($c) => [
                                         $c->id => "{$c->name}" . ($c->email ? " ({$c->email})" : ''),
                                     ])->toArray();
                                 }

@@ -366,9 +366,12 @@ class PsychometricDashboard extends Page implements HasTable
                     Select::make('candidate_id')
                         ->label('Candidato')
                         ->options(function () {
-                            return Candidate::orderBy('name')->get()->mapWithKeys(fn ($c) => [
-                                $c->id => "{$c->name}" . ($c->email ? " ({$c->email})" : ''),
-                            ]);
+                            return Candidate::availableForEvaluation()
+                                ->orderBy('name')
+                                ->get()
+                                ->mapWithKeys(fn ($c) => [
+                                    $c->id => "{$c->name}" . ($c->email ? " ({$c->email})" : ''),
+                                ]);
                         })
                         ->searchable()
                         ->required()
@@ -413,7 +416,18 @@ class PsychometricDashboard extends Page implements HasTable
                         ->required()
                         ->default(now()->addDays(14)),
                 ])
-                ->action(function (array $data) {
+                ->action(function (array $data, \Filament\Actions\Action $action) {
+                    $candidate = Candidate::find($data['candidate_id']);
+                    if (!$candidate || $candidate->status === Candidate::STATUS_CONTRATADO || $candidate->user_id) {
+                        Notification::make()
+                            ->title('Candidato no disponible')
+                            ->body('Este candidato ya fue contratado y es un colaborador. Para evaluarlo, utiliza la opción "Asignar a Colaborador".')
+                            ->danger()
+                            ->send();
+                        $action->halt();
+                        return;
+                    }
+
                     $this->createBatchEvaluations(
                         evaluableId: $data['candidate_id'],
                         evaluableType: Candidate::class,
@@ -469,7 +483,7 @@ class PsychometricDashboard extends Page implements HasTable
                                         $u->id => trim("{$u->name} {$u->first_name} {$u->last_name}") . ($u->email ? " ({$u->email})" : ''),
                                     ]);
                             }
-                            return Candidate::orderBy('name')->get()->mapWithKeys(fn ($c) => [
+                            return Candidate::availableForEvaluation()->orderBy('name')->get()->mapWithKeys(fn ($c) => [
                                 $c->id => "{$c->name}" . ($c->email ? " ({$c->email})" : ''),
                             ]);
                         })

@@ -172,6 +172,16 @@ class User extends Authenticatable implements FilamentUser
         return $this->morphMany(PsychometricEvaluation::class, 'evaluable');
     }
 
+    public function reportSnapshots(): HasMany
+    {
+        return $this->hasMany(CandidateReportSnapshot::class, 'user_id')->latest();
+    }
+
+    public function candidate(): HasOne
+    {
+        return $this->hasOne(Candidate::class);
+    }
+
     public function termination(): HasOne
     {
         return $this->hasOne(UserTermination::class);

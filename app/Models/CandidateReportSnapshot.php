@@ -9,6 +9,7 @@ class CandidateReportSnapshot extends Model
 {
     protected $fillable = [
         'candidate_id',
+        'user_id',
         'batch_id',
         'puesto_original',
         'puesto_evaluado',
@@ -34,6 +35,11 @@ class CandidateReportSnapshot extends Model
     public function candidate(): BelongsTo
     {
         return $this->belongsTo(Candidate::class);
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     public function generatedBy(): BelongsTo
