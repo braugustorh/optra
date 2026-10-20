@@ -95,6 +95,7 @@ class RazonSocialResource extends Resource
                 Tables\Columns\TextColumn::make('fiscal_address')
                     ->label('Dirección Fiscal')
                     ->searchable()
+                    ->wrap()
                     ->placeholder('—'),
                /* Tables\Columns\TextColumn::make('registro_patronal')
                     ->label('Registro Patronal')
