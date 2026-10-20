@@ -88,6 +88,7 @@ class RazonSocialResource extends Resource
                 Tables\Columns\TextColumn::make('name')
                     ->label('Razón Social')
                     ->searchable()
+                    ->wrap()
                     ->sortable(),
                 Tables\Columns\TextColumn::make('rfc')
                     ->label('RFC')
