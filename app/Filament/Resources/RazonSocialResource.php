@@ -92,10 +92,14 @@ class RazonSocialResource extends Resource
                 Tables\Columns\TextColumn::make('rfc')
                     ->label('RFC')
                     ->searchable(),
-                Tables\Columns\TextColumn::make('registro_patronal')
-                    ->label('Registro Patronal')
+                Tables\Columns\TextColumn::make('fiscal_address')
+                    ->label('Dirección Fiscal')
                     ->searchable()
                     ->placeholder('—'),
+               /* Tables\Columns\TextColumn::make('registro_patronal')
+                    ->label('Registro Patronal')
+                    ->searchable()
+                    ->placeholder('—'),*/
                 Tables\Columns\TextColumn::make('sedes.name')
                     ->label('Sedes')
                     ->badge()
