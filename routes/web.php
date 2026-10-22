@@ -8,6 +8,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Livewire;
 use App\Filament\Pages\ExitSurveyPage;
 use App\Http\Controllers\PublicEvaluationController;
+use App\Http\Controllers\QuejaViolenciaLaboralController;
 use App\Livewire\TakePsychometricTest;
 /*
 |--------------------------------------------------------------------------
@@ -48,7 +49,7 @@ Route::group(['middleware' => 'auth'], function () {
     Route::get('/exit-survey', ExitSurveyPage::class)->name('filament.pages.exit-survey-page');
     Route::get('/users/{user}/download-exit-survey', [\App\Http\Controllers\ExitSurveyController::class, 'download'])
         ->name('users.download-exit-survey');
-    Route::post('/quejas-violencia/store', [QuejaViolenciaLaboralController::class, 'store'])
+    Route::post('/quejas-violencia/store', [\App\Http\Controllers\QuejaViolenciaLaboralController::class, 'store'])
         ->name('quejas-violencia.store');
 });
 

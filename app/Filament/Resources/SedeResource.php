@@ -42,6 +42,10 @@ class SedeResource extends Resource
                     ->label('Nombre de la Sede')
                     ->required()
                     ->maxLength(150),
+                Forms\Components\TextInput::make('company_name')
+                    ->label('Razón Social (Sede)')
+                    ->placeholder('Nombre de la razón social asociada a la sede')
+                    ->maxLength(255),
                 Forms\Components\TextInput::make('cp')
                     ->label('Código Postal')
                     ->minLength(5)

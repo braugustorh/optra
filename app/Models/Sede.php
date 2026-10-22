@@ -12,11 +12,11 @@ class Sede extends Model
 
     protected $fillable = [
         'name',
+        'company_name',
         'address',
         'phone',
         'city',
         'state',
-        'address', // 'address' is misspelled
         'cp',
         'status',
         'open_positions',

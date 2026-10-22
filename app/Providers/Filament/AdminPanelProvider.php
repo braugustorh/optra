@@ -93,7 +93,11 @@ class AdminPanelProvider extends PanelProvider
                         MyImages::make()
                             ->directory('images/backgrounds')
                     ), */
-            ])->databaseNotifications();
+            ])->databaseNotifications()
+            ->renderHook(
+                \Filament\View\PanelsRenderHook::BODY_END,
+                fn (): string => \Illuminate\Support\Facades\Blade::render('@livewire(\App\Livewire\PrivacyNoticeModal::class)')
+            );
 
 
     }

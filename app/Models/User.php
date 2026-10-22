@@ -198,6 +198,11 @@ class User extends Authenticatable implements FilamentUser
         return $this->hasMany(UserTransfer::class)->latest('transfer_date');
     }
 
+    public function privacyNoticeAcceptances(): HasMany
+    {
+        return $this->hasMany(PrivacyNoticeAcceptance::class, 'user_id')->latest('accepted_at');
+    }
+
 
 
     public function getProfilePhotoUrlAttribute(): string
