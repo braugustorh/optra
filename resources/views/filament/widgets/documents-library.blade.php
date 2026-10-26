@@ -43,6 +43,11 @@
                 <h4 class="text-md font-medium text-gray-900 dark:text-white mb-3">Documentos Recientes</h4>
                 <div class="space-y-2">
                     @foreach($this->getViewData()['recentDocuments'] as $document)
+                        @php
+                            $downloadAction = $document['method'] === 'downloadPolicy'
+                                ? 'downloadPolicy'
+                                : "downloadDocument('" . $document['path'] . "')";
+                        @endphp
                         <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
                             <div class="flex items-center space-x-3">
                                 <div class="flex-shrink-0">
@@ -66,7 +71,7 @@
                                 size="sm"
                                 color="gray"
                                 outlined
-                                wire:click="downloadDocument('{{ $document['path'] }}')"
+                                wire:click="{{ $downloadAction }}"
                             >
                                 Descargar
                             </x-filament::button>
@@ -76,6 +81,8 @@
             </div>
 
             <!-- Acciones rápidas -->
+            @if(!auth()->user()->hasRole('Colaborador'))
+
             <div class="border-t dark:border-gray-700 pt-4">
                 <div class="flex space-x-2">
                     <x-filament::button
@@ -109,6 +116,7 @@
                     </x-filament::button>
                 </div>
             </div>
+            @endif
         </div>
     </x-filament::section>
 </x-filament-widgets::widget>

@@ -23,25 +23,106 @@ class DocumentsLibraryWidget extends Widget
     {
         // Aquí puedes agregar la lógica para obtener documentos
         // Por ejemplo, desde una tabla de documentos o archivos
-        return [
-            'totalDocuments' => 1, // Ejemplo
-            'recentDocuments' => [
-                ['name' => 'Protocolo para prevenir, atender y erradicar la violencia laboral',
-                    'path' => 'protocolo_violencia.pdf',
-                    'description' => 'Este es un protocolo para prevenir y erradicar la violencia en tu centro de trabajo.',
-                    'type' => 'PDF',
-                    'size' => '1.2 MB'],
+        $documents = [];
 
-            ],
+        if ($this->hasActiveNorma()) {
+            $documents[] = [
+                'name' => 'Política de prevención de riesgos psicosociales, violencia laboral y entorno organizacional favorable',
+                'path' => 'politica_riesgos',
+                'method' => 'downloadPolicy',
+                'description' => 'Política de prevención de riesgos psicosociales, violencia laboral y entorno organizacional favorable.',
+                'type' => 'PDF',
+                'size' => '—',
+            ];
+        }
+
+        if (static::canView()) {
+            $documents[] = [
+                'name' => 'Protocolo para prevenir, atender y erradicar la violencia laboral',
+                'path' => 'protocolo_violencia.pdf',
+                'method' => 'downloadDocument',
+                'description' => 'Este es un protocolo para prevenir y erradicar la violencia en tu centro de trabajo.',
+                'type' => 'PDF',
+                'size' => '1.2 MB',
+            ];
+        }
+
+        return [
+            'totalDocuments' => count($documents),
+            'recentDocuments' => $documents,
             'categories' => [
-                'Políticas' => 1,
+                'Políticas' => count($documents),
                 'Formatos' => 0,
-               // 'Manuales' => 5,
             ]
         ];
     }
+
+    // Verifica que exista una NOM-035 activa en la sede del colaborador
+    protected function hasActiveNorma(): bool
+    {
+        $sedeId = auth()->user()?->sede_id;
+
+        return $sedeId && \App\Models\Nom035Process::findActiveProcess($sedeId) !== null;
+    }
+
+    public function downloadPolicy()
+    {
+        if (!$this->hasActiveNorma()) {
+            abort(403);
+        }
+
+        $templatePath = storage_path('app/plantillas/Politica_de_riesgos_template_Optra.docx');
+        $tmpDir = storage_path('app/livewire-tmp');
+        $tempWordPath = null;
+
+        try {
+            if (!file_exists($templatePath)) {
+                throw new \Exception('No se encontró la plantilla de la política');
+            }
+
+            if (!is_dir($tmpDir)) {
+                mkdir($tmpDir, 0755, true);
+            }
+
+            // Copia temporal del Word para convertirlo
+            $nombreArchivo = 'politica_' . time() . '.docx';
+            $tempWordPath = $tmpDir . '/' . $nombreArchivo;
+            copy($templatePath, $tempWordPath);
+
+            $ilovepdf = new \Ilovepdf\Ilovepdf('project_public_e77e6c5a886b8b19b9e83808f514bf44_uChwi13485de38f75fad79190646cb3fbacfe',
+                'secret_key_5ad6baf9deee4bbf2dee704afa6502d5_Lau4ia401a9d22bc6a6715f4c39ec19fd6dd1');
+
+            $task = $ilovepdf->newTask('officepdf');
+            $task->addFile($tempWordPath);
+            $task->execute();
+            $task->download($tmpDir);
+
+            $rutaPdf = $tmpDir . '/' . str_replace('.docx', '.pdf', $nombreArchivo);
+
+            if (!file_exists($rutaPdf)) {
+                throw new \Exception('El archivo PDF no se generó correctamente');
+            }
+
+            return response()->download($rutaPdf, 'Politica_Prevencion_Riesgos_Psicosociales.pdf')->deleteFileAfterSend();
+        } catch (\Exception $e) {
+            \Filament\Notifications\Notification::make()
+                ->title('Error al generar la política')
+                ->body($e->getMessage())
+                ->danger()
+                ->send();
+        } finally {
+            if ($tempWordPath && file_exists($tempWordPath)) {
+                @unlink($tempWordPath);
+            }
+        }
+    }
+
     public function downloadDocument(string $name){
-        $storagePath = storage_path('app/documents/' . $name);
+        if ($name === 'protocolo_violencia.pdf' && !static::canView()) {
+            abort(403);
+        }
+
+        $storagePath = storage_path('app/documents/' . basename($name));
 
         if (file_exists($storagePath)) {
             if ($name === 'protocolo_violencia.pdf'){
