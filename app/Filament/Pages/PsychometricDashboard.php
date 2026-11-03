@@ -266,33 +266,37 @@ class PsychometricDashboard extends Page implements HasTable
                 ->color('primary')
                 ->hidden(fn () => auth()->user()->hasRole('Reclutador Jr'))
                 ->form([
-                    // 1. Selector de Sede (Visible y editable solo para Admin/RH Corp)
+                    // 1. Selector de Sede (Visible y editable para Admin/RH Corp/Reclutador)
                     Forms\Components\Select::make('sede_id')
                         ->label('Sede')
                         ->options(\App\Models\Sede::pluck('name', 'id'))
                         ->searchable()
                         ->preload()
                         ->live()
-                        ->visible(fn () => auth()->user()->hasAnyRole(['Administrador', 'RH Corp']))
-                        ->required(fn () => auth()->user()->hasAnyRole(['Administrador', 'RH Corp'])),
+                        ->default(fn () => auth()->user()->sede_id)
+                        ->afterStateUpdated(fn (Forms\Set $set) => $set('user_id', null))
+                        ->visible(fn () => auth()->user()->hasAnyRole(['Administrador', 'Super Administrador', 'RH Corp', 'Reclutador']))
+                        ->required(fn () => auth()->user()->hasAnyRole(['Administrador', 'Super Administrador', 'RH Corp', 'Reclutador'])),
 
                     // 2. Selector de Colaborador (Dependiente de la sede)
                     Forms\Components\Select::make('user_id')
                         ->label('Colaborador')
                         ->options(function (Forms\Get $get) {
-                            if (auth()->user()->hasAnyRole(['Administrador', 'RH Corp'])) {
+                            if (auth()->user()->hasAnyRole(['Administrador', 'Super Administrador', 'RH Corp', 'Reclutador'])) {
                                 $sedeId = $get('sede_id');
                             } else {
                                 $sedeId = auth()->user()->sede_id;
                             }
                             if (! $sedeId) return [];
                             return \App\Models\User::where('sede_id', $sedeId)
+                                ->orderBy('name')
                                 ->get()
                                 ->mapWithKeys(fn ($user) => [
                                     $user->id => trim($user->name . ' ' . $user->first_name . ' ' . $user->last_name)
                                 ]);
                         })
                         ->searchable()
+                        ->preload()
                         ->required()
                         ->loadingMessage('Cargando colaboradores...'),
 
