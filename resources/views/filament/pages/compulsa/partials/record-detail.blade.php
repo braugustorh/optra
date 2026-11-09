@@ -167,6 +167,16 @@
             <div class="text-sm space-y-1">
                 <div><span class="text-gray-500">Días:</span> <span class="font-semibold">{{ $record->dias_sua ?? '—' }}</span></div>
                 <div><span class="text-gray-500">SDI:</span> <span class="font-semibold">$ {{ number_format((float)($record->sdi_sua ?? 0), 4) }}</span></div>
+                @if(($desglose['incapacidades_sua'] ?? 0) > 0 || ($desglose['ausentismos_sua'] ?? 0) > 0)
+                    <div class="pt-1 border-t border-gray-200 dark:border-gray-700 text-xs flex flex-wrap gap-1">
+                        @if(($desglose['ausentismos_sua'] ?? 0) > 0)
+                            <span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 font-medium">{{ $desglose['ausentismos_sua'] }} aus.</span>
+                        @endif
+                        @if(($desglose['incapacidades_sua'] ?? 0) > 0)
+                            <span class="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200 font-medium">{{ $desglose['incapacidades_sua'] }} incap.</span>
+                        @endif
+                    </div>
+                @endif
                 @if(! empty($desglose['nss_discrepante_sua']['nss_sua_detectado']))
                     <div class="pt-1 border-t border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-300">
                         NSS capturado: <span class="font-mono font-medium">{{ $desglose['nss_discrepante_sua']['nss_sua_detectado'] }}</span>
@@ -230,7 +240,9 @@
         <div>
             <div class="text-gray-500">Días cotizados (Art. 31)</div>
             <div class="font-semibold">
-                @if(($record->dias_eym ?? null) !== null && ($record->dias_resto ?? null) !== null && $record->dias_eym !== $record->dias_resto)
+                @if($tipo === 'bimestral' && ($desglose['dias_retiro_infonavit'] ?? null) !== null && $desglose['dias_retiro_infonavit'] !== $record->dias_resto)
+                    Retiro/Infonavit: {{ $desglose['dias_retiro_infonavit'] }} d | Cesantía: {{ $record->dias_resto }} d
+                @elseif(($record->dias_eym ?? null) !== null && ($record->dias_resto ?? null) !== null && $record->dias_eym !== $record->dias_resto)
                     EyM: {{ $record->dias_eym }} d | Resto: {{ $record->dias_resto }} d
                 @else
                     {{ $record->dias_resto ?? $diasDeclarado }} días

@@ -40,6 +40,11 @@
                 },
             };
         </script>
+        <style>
+            .fi-main {
+                max-width: 85% !important;
+            }
+        </style>
     @endonce
 
     @php

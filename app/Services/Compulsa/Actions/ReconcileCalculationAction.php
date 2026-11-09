@@ -195,18 +195,46 @@ class ReconcileCalculationAction
         $sdiDeclaradoRaw = $this->firstNonNull($record->sdi_nomina, $record->sdi_sua, $record->sdi_imss);
 
         // Determinación de días vigentes base y vectores duales (Art. 31 LSS)
-        $diasVigentesBase = $record->dias_imss ?? $record->dias_sua ?? $diasCalendarioPeriodo;
-        $faltas = (int) ($record->dias_faltas_nomina ?? 0);
-        $incapacidades = (int) ($record->dias_incapacidad_nomina ?? 0);
+        $diasNomina = (int) ($record->dias_nomina ?? 0);
+        $faltasNomina = (int) ($record->dias_faltas_nomina ?? 0);
+        $incapacidadesNomina = (int) ($record->dias_incapacidad_nomina ?? 0);
         $vacaciones = (int) ($record->dias_vacaciones_nomina ?? 0);
 
-        if ($record->presente_nomina && ($faltas > 0 || $incapacidades > 0)) {
-            $faltasAplicables = min($faltas, 7);
-            $diasEyM = max(0, $diasVigentesBase - $incapacidades);
-            $diasResto = max(0, $diasVigentesBase - $incapacidades - $faltasAplicables);
+        // H1: Si el trabajador solo figura en la plantilla de Nómina (ausente en IMSS y SUA)
+        $soloEnNomina = $record->presente_nomina && ! $record->presente_imss && ! $record->presente_sua;
+        if ($soloEnNomina) {
+            $diasActivosNomina = $diasNomina + $vacaciones + $incapacidadesNomina;
+            if ($diasActivosNomina === 0) {
+                // Subcaso H1-A: 0 días laborados/vacaciones/incapacidad en el período -> sin vigencia ni cuota
+                $diasVigentesBase = 0;
+            } else {
+                // Subcaso H1-B: Con actividad real en Nómina (posible alta en el período no reportada en IMSS/SUA)
+                $totalDiasNomina = $diasActivosNomina + $faltasNomina;
+                $diasVigentesBase = $totalDiasNomina < 28
+                    ? min($diasCalendarioPeriodo, $totalDiasNomina)
+                    : $diasCalendarioPeriodo;
+            }
         } else {
+            $diasVigentesBase = $record->dias_imss ?? $record->dias_sua ?? $diasCalendarioPeriodo;
+        }
+
+        // Incidencias capturadas en la Cédula SUA (columnas 'Aus.' e 'Inc.'). Si el trabajador
+        // no viene en Nómina (p. ej. bajas del bimestre) son la única fuente; si viene en ambos,
+        // se toma el mayor para no duplicar ni perder días ya aplicados en el SUA.
+        $suaIncidencias = $this->suaIncidencias($record);
+        $faltas = max($faltasNomina, $suaIncidencias['ausentismos']);
+        $incapacidades = max($incapacidadesNomina, $suaIncidencias['incapacidades']);
+
+        $faltasAplicables = min($faltas, 7);
+        // Vector EyM / Resto (Art. 31 LSS). En EBA, "Resto" aplica a Cesantía y Vejez.
+        $diasEyM = max(0, $diasVigentesBase - $incapacidades);
+        $diasResto = max(0, $diasVigentesBase - $incapacidades - $faltasAplicables);
+        // Vector EBA para Retiro e Infonavit 5%: la incapacidad médica NO los descuenta (solo ausentismos).
+        $diasRetInf = max(0, $diasVigentesBase - $faltasAplicables);
+        if ($faltas === 0 && $incapacidades === 0) {
             $diasEyM = $diasVigentesBase;
             $diasResto = $diasVigentesBase;
+            $diasRetInf = $diasVigentesBase;
         }
 
         $sdiTopado = $this->applyCapAndFloor(
@@ -280,8 +308,8 @@ class ReconcileCalculationAction
             }
 
             // Subtotal Cuotas Ordinarias Patrón (con vector de días resto que descuenta ausentismos e incapacidades)
-            $cuotaPatronBreak = ($sdiTopado !== null && $diasResto > 0)
-                ? $this->calculateCuota($tipo, (float) $sdiTopado, $diasEyM, $diasResto, $emaRates, $ebaRates, $valorUma, $primaRiesgo, $salarioMinimo, $tablaCesantia, $exencionSm)
+            $cuotaPatronBreak = ($sdiTopado !== null && max($diasResto, $diasRetInf) > 0)
+                ? $this->calculateCuota($tipo, (float) $sdiTopado, $diasEyM, $diasResto, $emaRates, $ebaRates, $valorUma, $primaRiesgo, $salarioMinimo, $tablaCesantia, $exencionSm, $diasRetInf)
                 : ['total' => 0.0, 'patronal' => 0.0, 'obrera' => 0.0, 'desglose' => []];
             $subtotalCuotasPatron = round($cuotaPatronBreak['total'], 2);
 
@@ -382,6 +410,9 @@ class ReconcileCalculationAction
                     'faltas_nomina' => $faltas,
                     'incapacidades_nomina' => $incapacidades,
                     'vacaciones_nomina' => $vacaciones,
+                    'incapacidades_sua' => $suaIncidencias['incapacidades'],
+                    'ausentismos_sua' => $suaIncidencias['ausentismos'],
+                    'dias_retiro_infonavit' => $diasRetInf,
                     'prima_riesgo' => $primaRiesgo,
                     'valor_uma' => $valorUma,
                     'patron' => array_merge($cuotaPatronBreak, [
@@ -476,6 +507,8 @@ class ReconcileCalculationAction
                 'faltas_nomina' => $faltas,
                 'incapacidades_nomina' => $incapacidades,
                 'vacaciones_nomina' => $vacaciones,
+                'incapacidades_sua' => $suaIncidencias['incapacidades'],
+                'ausentismos_sua' => $suaIncidencias['ausentismos'],
                 'prima_riesgo' => $primaRiesgo,
                 'valor_uma' => $valorUma,
                 'patron' => $cuotaPatronBreak,
@@ -515,9 +548,10 @@ class ReconcileCalculationAction
         float $salarioMinimo,
         array $tablaCesantia,
         bool $exencionSm,
+        ?int $diasRetInf = null,
     ): array {
         return $tipo === PeriodType::Bimestral
-            ? $this->calculateEba($sdiTopado, $diasResto, $ebaRates, $salarioMinimo, $valorUma, $tablaCesantia, $exencionSm)
+            ? $this->calculateEba($sdiTopado, $diasResto, $ebaRates, $salarioMinimo, $valorUma, $tablaCesantia, $exencionSm, $diasRetInf)
             : $this->calculateEma($sdiTopado, $diasEyM, $diasResto, $emaRates, $valorUma, $primaRiesgo, $salarioMinimo, $exencionSm);
     }
 
@@ -622,15 +656,20 @@ class ReconcileCalculationAction
         float $valorUma,
         array $tablaCesantia,
         bool $exencionSm,
+        ?int $diasRetInf = null,
     ): array {
+        // $diasResto: días de Cesantía y Vejez (descuenta incapacidades y faltas).
+        // $diasRetInf: días de Retiro e Infonavit 5% (la incapacidad no los descuenta). Por defecto = $diasResto.
+        $diasRetInf ??= $diasResto;
         $baseSdi = $sdiTopado * $diasResto;
+        $baseSdiRetInf = $sdiTopado * $diasRetInf;
 
-        $retiro = $baseSdi * $this->pct($rates, 'retiro_patronal');
+        $retiro = $baseSdiRetInf * $this->pct($rates, 'retiro_patronal');
 
         $cesantiaPatronRate = $this->resolveCesantiaRate($sdiTopado, $salarioMinimo, $valorUma, $tablaCesantia, $this->pct($rates, 'cesantia_patronal'));
         $cesantiaPatron = $baseSdi * $cesantiaPatronRate;
         $cesantiaObrero = $baseSdi * $this->pct($rates, 'cesantia_obrero');
-        $infonavit = $baseSdi * $this->pct($rates, 'infonavit_patronal');
+        $infonavit = $baseSdiRetInf * $this->pct($rates, 'infonavit_patronal');
 
         // Art. 36 LSS: Exención de cuota obrera para Salario Mínimo
         if ($exencionSm && $salarioMinimo > 0 && $sdiTopado <= ($salarioMinimo + 0.01)) {
@@ -763,17 +802,29 @@ class ReconcileCalculationAction
             }
         }
 
-        if (! $record->presente_imss) {
+        $soloEnNominaSinActividad = $record->presente_nomina
+            && ! $record->presente_imss
+            && ! $record->presente_sua
+            && ((int) ($record->dias_nomina ?? 0) + (int) ($record->dias_vacaciones_nomina ?? 0) + (int) ($record->dias_incapacidad_nomina ?? 0)) === 0;
+
+        if ($soloEnNominaSinActividad) {
             $alertas[] = 'falta_imss';
-            $observaciones[] = 'Empleado no reportado en el archivo IMSS (posible alta no capturada en SUA).';
-        }
-        if (! $record->presente_nomina) {
-            $alertas[] = 'falta_nomina';
-            $observaciones[] = 'Empleado no reportado en la nómina interna (posible baja o error de captura).';
-        }
-        if (! $record->presente_sua) {
             $alertas[] = 'falta_sua';
-            $observaciones[] = 'Empleado no reportado en SUA.';
+            $alertas[] = 'sin_actividad_periodo';
+            $observaciones[] = 'Trabajador en plantilla de nómina con 0 días laborados en el período y sin registro en IMSS/SUA (baja previa o reingreso futuro); no genera obligación de cuotas obrero-patronales (Arts. 12 y 15 LSS).';
+        } else {
+            if (! $record->presente_imss) {
+                $alertas[] = 'falta_imss';
+                $observaciones[] = 'Empleado no reportado en el archivo IMSS (posible alta no capturada en SUA).';
+            }
+            if (! $record->presente_nomina) {
+                $alertas[] = 'falta_nomina';
+                $observaciones[] = 'Empleado no reportado en la nómina interna (posible baja o error de captura).';
+            }
+            if (! $record->presente_sua) {
+                $alertas[] = 'falta_sua';
+                $observaciones[] = 'Empleado no reportado en SUA.';
+            }
         }
 
         $superaTope = $sdiDeclarado !== null && $sdiDeclarado > $topeSdi;
@@ -806,19 +857,45 @@ class ReconcileCalculationAction
                     $incidenciaOmitidaSua = true;
                     $alertas[] = 'incidencia_omitida_en_sua';
                     $incDesc = [];
-                    if ($faltas > 0) {
-                        $incDesc[] = "{$faltas} falta(s)";
+                    $suaInc = $this->suaIncidencias($record);
+                    $faltasPend = max(0, (int) ($record->dias_faltas_nomina ?? 0) - $suaInc['ausentismos']);
+                    $incapPend = max(0, (int) ($record->dias_incapacidad_nomina ?? 0) - $suaInc['incapacidades']);
+                    if ($faltasPend === 0 && $incapPend === 0) {
+                        $faltasPend = $faltas;
+                        $incapPend = $incapacidades;
                     }
-                    if ($incapacidades > 0) {
-                        $incDesc[] = "{$incapacidades} incapacidad(es)";
+                    if ($faltasPend > 0) {
+                        $incDesc[] = "{$faltasPend} falta(s)";
+                    }
+                    if ($incapPend > 0) {
+                        $incDesc[] = "{$incapPend} incapacidad(es)";
                     }
                     $observaciones[] = sprintf(
-                        'El trabajador registra %s en nómina no capturadas en el SUA. Capturarlas en el SUA generará un ahorro real de $%s en las cuotas obrero-patronales.',
+                        'El trabajador registra %s en nómina no capturadas en el SUA. Capturarlas en el SUA generará un ahorro potencial de $%s en las cuotas obrero-patronales (sujeto a comprobación con listas de raya y/o certificados IMSS conforme al Art. 31 Fracc. I y IV LSS).',
                         implode(' y ', $incDesc),
                         number_format($ahorro, 2)
                     );
                 }
             }
+        }
+
+        // Incidencias ya aplicadas en el SUA que explican la diferencia contra la emisión IMSS (Art. 39-A LSS)
+        $suaIncApl = $this->suaIncidencias($record);
+        if ($record->presente_sua && $record->presente_imss
+            && ($suaIncApl['incapacidades'] > 0 || $suaIncApl['ausentismos'] > 0)
+            && abs($diferencia) > self::EPSILON_MONEY) {
+            $alertas[] = 'incidencia_aplicada_en_sua';
+            $partes = [];
+            if ($suaIncApl['incapacidades'] > 0) {
+                $partes[] = "{$suaIncApl['incapacidades']} día(s) de incapacidad";
+            }
+            if ($suaIncApl['ausentismos'] > 0) {
+                $partes[] = "{$suaIncApl['ausentismos']} día(s) de ausentismo";
+            }
+            $observaciones[] = sprintf(
+                'La Cédula SUA aplica %s que la emisión IMSS no considera (Art. 31 y 39-A LSS); el pago debe hacerse conforme a la Cédula SUA.',
+                implode(' y ', $partes)
+            );
         }
 
         // Comparación de días
@@ -921,5 +998,26 @@ class ReconcileCalculationAction
             }
         }
         return null;
+    }
+
+    /**
+     * Incidencias capturadas en la Cédula SUA (columnas 'Aus.' e 'Inc.').
+     *
+     * @return array{incapacidades: int, ausentismos: int}
+     */
+    private function suaIncidencias(CalculationRecord $record): array
+    {
+        $sua = $record->desglose_sua;
+        if (is_string($sua)) {
+            $sua = json_decode($sua, true);
+        }
+        if (! is_array($sua)) {
+            $sua = [];
+        }
+
+        return [
+            'incapacidades' => (int) ($sua['incapacidades'] ?? 0),
+            'ausentismos' => (int) ($sua['ausentismos'] ?? 0),
+        ];
     }
 }

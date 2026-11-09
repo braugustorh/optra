@@ -192,13 +192,13 @@ class NominaFileParser extends AbstractExcelParser
         $sd = $this->cleanFloat($this->pick($row, $columns, 'sd'));
 
         if ($sbc !== null && $sbc > 0) {
-            $sdiFinal = $sbc;
+            $sdiFinal = round($sbc, 2);
         } elseif ($sdiFijo !== null && $sdiFijo > 0 && $sdiVar !== null && $sdiVar > 0) {
-            $sdiFinal = round($sdiFijo + $sdiVar, 4);
+            $sdiFinal = round($sdiFijo + $sdiVar, 2);
         } elseif ($sdiFijo !== null && $sdiFijo > 0) {
-            $sdiFinal = $sdiFijo;
+            $sdiFinal = round($sdiFijo, 2);
         } else {
-            $sdiFinal = $sd;
+            $sdiFinal = $sd !== null ? round($sd, 2) : null;
         }
 
         // Extracción de incidencias

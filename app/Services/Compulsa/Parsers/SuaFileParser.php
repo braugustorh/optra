@@ -80,7 +80,7 @@ class SuaFileParser extends AbstractExcelParser
         $highestRow = $sheet->getHighestDataRow();
         $highestCol = $sheet->getHighestDataColumn();
 
-        [$diasCol, $sdiCol] = $this->detectCedulaDataColumns($sheet, $highestRow, $highestCol);
+        [$diasCol, $sdiCol, $incCol, $ausCol] = $this->detectCedulaDataColumns($sheet, $highestRow, $highestCol);
 
         /** @var \Illuminate\Support\Collection<string, \App\Services\Compulsa\Dto\EmployeeRow> $consolidated */
         $consolidated = collect();
@@ -107,6 +107,9 @@ class SuaFileParser extends AbstractExcelParser
                 $sdi = $this->cleanFloat($sdiVal);
 
                 if ($dias !== null && $sdi !== null && $sdi > 0) {
+                    $incapacidades = $this->cleanInt($row[$incCol] ?? null) ?? 0;
+                    $ausentismos = $this->cleanInt($row[$ausCol] ?? null) ?? 0;
+
                     // Separar RFC y CURP si vienen juntos o determinar formato
                     $rfc = null;
                     $curp = null;
@@ -123,7 +126,7 @@ class SuaFileParser extends AbstractExcelParser
 
                     // Extracción de Cuotas y Ramas según período (Mensual o Bimestral)
                     $isBimestral = ($diasCol === 2 && $sdiCol === 3);
-                    $cuotasDetalle = $this->extractSuaCuotasDetalle($row, $isBimestral);
+                    $cuotasDetalle = $this->extractSuaCuotasDetalle($row, $isBimestral, $incapacidades, $ausentismos);
                     $amortizacion = (float) ($cuotasDetalle['amortizacion'] ?? 0.0);
                     $cuotaTotal = (float) ($cuotasDetalle['total'] ?? 0.0);
 
@@ -138,6 +141,8 @@ class SuaFileParser extends AbstractExcelParser
                         raw: [],
                         cuotaTotal: $cuotaTotal > 0 ? $cuotaTotal : null,
                         cuotasDetalle: $cuotasDetalle,
+                        diasFaltas: $ausentismos,
+                        diasIncapacidad: $incapacidades,
                     );
 
                     if (! $consolidated->has($currentNss)) {
@@ -145,6 +150,8 @@ class SuaFileParser extends AbstractExcelParser
                     } else {
                         $existing = $consolidated->get($currentNss);
                         $mergedDias = ($existing->diasLaborados ?? 0) + $dias;
+                        $mergedFaltas = ($existing->diasFaltas ?? 0) + $ausentismos;
+                        $mergedIncapacidad = ($existing->diasIncapacidad ?? 0) + $incapacidades;
                         $latestSdi = $sdi > 0 ? $sdi : $existing->sdi;
 
                         $mergedCuotasDetalle = $this->mergeSuaCuotasDetalle(
@@ -164,6 +171,8 @@ class SuaFileParser extends AbstractExcelParser
                             raw: [],
                             cuotaTotal: $mergedTotal > 0 ? $mergedTotal : null,
                             cuotasDetalle: $mergedCuotasDetalle,
+                            diasFaltas: $mergedFaltas,
+                            diasIncapacidad: $mergedIncapacidad,
                         ));
                     }
 
@@ -181,7 +190,7 @@ class SuaFileParser extends AbstractExcelParser
     /**
      * @return array<string, mixed>
      */
-    private function extractSuaCuotasDetalle(array $row, bool $isBimestral): array
+    private function extractSuaCuotasDetalle(array $row, bool $isBimestral, int $incapacidades = 0, int $ausentismos = 0): array
     {
         if ($isBimestral) {
             $retiro = (float) ($this->cleanFloat($row[7] ?? null) ?? 0.0);
@@ -223,6 +232,8 @@ class SuaFileParser extends AbstractExcelParser
                 'cuotas_subtotal' => $subtotal,
                 'amortizacion' => $amortizacion,
                 'numero_credito' => $numeroCredito,
+                'incapacidades' => $incapacidades,
+                'ausentismos' => $ausentismos,
                 'desglose' => $desglose,
             ];
         }
@@ -268,6 +279,8 @@ class SuaFileParser extends AbstractExcelParser
             'patronal' => round($patronal, 2),
             'obrera' => round($obrera, 2),
             'cuotas_subtotal' => round($total, 2),
+            'incapacidades' => $incapacidades,
+            'ausentismos' => $ausentismos,
             'desglose' => $desglose,
         ];
     }
@@ -319,6 +332,8 @@ class SuaFileParser extends AbstractExcelParser
             'cuotas_subtotal' => $subtotal,
             'amortizacion' => $mergedAmort > 0 ? $mergedAmort : null,
             'numero_credito' => $credito,
+            'incapacidades' => (int) ($ex['incapacidades'] ?? 0) + (int) ($new['incapacidades'] ?? 0),
+            'ausentismos' => (int) ($ex['ausentismos'] ?? 0) + (int) ($new['ausentismos'] ?? 0),
             'desglose' => $mergedDesglose,
         ];
     }
@@ -328,13 +343,18 @@ class SuaFileParser extends AbstractExcelParser
      * En formato mensual: Días suele estar en Col 3 y SDI en Col 4.
      * En formato bimestral: Días suele estar en Col 2 y SDI en Col 3.
      *
-     * @return array{0: int, 1: int}
+     * Además devuelve las columnas 'Inc.' (incapacidades) y 'Aus.' (ausentismos),
+     * que en la Cédula siempre van 3 y 4 posiciones después de 'Días' (Días, SDI, Lic., Inc., Aus.).
+     *
+     * @return array{0: int, 1: int, 2: int, 3: int}
      */
     private function detectCedulaDataColumns(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet, int $highestRow, string $highestCol): array
     {
         $maxScan = min(35, $highestRow);
         $diasCol = null;
         $sdiCol = null;
+        $incCol = null;
+        $ausCol = null;
 
         for ($r = 1; $r <= $maxScan; $r++) {
             $row = $sheet->rangeToArray("A{$r}:{$highestCol}{$r}", null, false, false)[0] ?? [];
@@ -346,14 +366,20 @@ class SuaFileParser extends AbstractExcelParser
                 if ($v === 'sdi' || $v === 's.d.i.') {
                     $sdiCol = (int) $colIdx;
                 }
+                if ($v === 'inc.' || $v === 'inc') {
+                    $incCol = (int) $colIdx;
+                }
+                if ($v === 'aus.' || $v === 'aus') {
+                    $ausCol = (int) $colIdx;
+                }
             }
             if ($diasCol !== null && $sdiCol !== null) {
-                return [$diasCol, $sdiCol];
+                return [$diasCol, $sdiCol, $incCol ?? ($diasCol + 3), $ausCol ?? ($diasCol + 4)];
             }
         }
 
         // Fallback por defecto si no encuentra cabecera explícita
-        return [3, 4];
+        return [3, 4, 6, 7];
     }
 
     protected function columnAliases(): array

@@ -53,6 +53,7 @@ class Compulsa extends Page implements HasTable
     protected static ?string $title = 'Compulsa IMSS';
     protected static ?string $slug = 'compulsa';
     protected static string $view = 'filament.pages.compulsa';
+    protected ?string $maxContentWidth = 'max-w-[85%]';
 
     public ?int $activeCalculationId = null;
     public string $tempUploadDir = '';
@@ -291,6 +292,20 @@ class Compulsa extends Page implements HasTable
         return [
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'application/vnd.ms-excel',
+            'application/CDFV2',
+            'application/CDFV2-corrupt',
+            'application/CDFV2-unknown',
+            'application/cdfv2',
+            'application/x-ole-storage',
+            'application/vnd.ms-office',
+            'application/msexcel',
+            'application/x-msexcel',
+            'application/x-ms-excel',
+            'application/x-excel',
+            'application/xls',
+            'application/x-xls',
+            'application/octet-stream',
+            'application/zip',
         ];
     }
 
