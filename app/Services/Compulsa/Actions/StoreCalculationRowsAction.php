@@ -85,6 +85,9 @@ class StoreCalculationRowsAction
             ],
             FileSource::Nomina => [
                 'dias_nomina' => $row->diasLaborados,
+                'dias_faltas_nomina' => $row->diasFaltas,
+                'dias_incapacidad_nomina' => $row->diasIncapacidad,
+                'dias_vacaciones_nomina' => $row->diasVacaciones,
                 'sdi_nomina' => $row->sdi,
                 'presente_nomina' => true,
             ],
@@ -104,7 +107,7 @@ class StoreCalculationRowsAction
         return match ($source) {
             FileSource::Imss => [...$common, 'dias_imss', 'sdi_imss', 'cuota_imss', 'desglose_cuotas', 'amortizacion_imss', 'numero_credito', 'presente_imss'],
             FileSource::Sua => [...$common, 'dias_sua', 'sdi_sua', 'cuota_sua', 'desglose_sua', 'amortizacion_sua', 'numero_credito', 'presente_sua'],
-            FileSource::Nomina => [...$common, 'dias_nomina', 'sdi_nomina', 'presente_nomina'],
+            FileSource::Nomina => [...$common, 'dias_nomina', 'dias_faltas_nomina', 'dias_incapacidad_nomina', 'dias_vacaciones_nomina', 'sdi_nomina', 'presente_nomina'],
         };
     }
 }

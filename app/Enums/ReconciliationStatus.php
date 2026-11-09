@@ -17,6 +17,8 @@ enum ReconciliationStatus: string implements HasLabel, HasColor, HasIcon
     case DiferenciaSdi = 'diferencia_sdi';
     case DiferenciaDias = 'diferencia_dias';
     case SuperaTope = 'supera_tope';
+    case IncidenciaOmitidaSua = 'incidencia_omitida_sua';
+    case NssDiscrepante = 'nss_discrepante';
     case FaltaSua = 'falta_sua';
     case Faltante = 'faltante';
 
@@ -30,6 +32,8 @@ enum ReconciliationStatus: string implements HasLabel, HasColor, HasIcon
             self::DiferenciaSdi => 'Dif. SDI',
             self::DiferenciaDias => 'Dif. días',
             self::SuperaTope => 'Supera 25 UMAs',
+            self::IncidenciaOmitidaSua => 'Incidencia omitida SUA (Ahorro)',
+            self::NssDiscrepante => 'NSS Discrepante',
             self::FaltaSua => 'Falta SUA',
             self::Faltante => 'Falta IMSS / Nómina',
         };
@@ -40,7 +44,7 @@ enum ReconciliationStatus: string implements HasLabel, HasColor, HasIcon
         return match ($this) {
             self::Pendiente => 'gray',
             self::Ok => 'success',
-            self::DiferenciaCuota, self::DiferenciaCredito, self::DiferenciaSdi, self::DiferenciaDias, self::FaltaSua => 'warning',
+            self::DiferenciaCuota, self::DiferenciaCredito, self::DiferenciaSdi, self::DiferenciaDias, self::IncidenciaOmitidaSua, self::NssDiscrepante, self::FaltaSua => 'warning',
             self::SuperaTope, self::Faltante => 'danger',
         };
     }
@@ -55,6 +59,8 @@ enum ReconciliationStatus: string implements HasLabel, HasColor, HasIcon
             self::DiferenciaSdi => 'heroicon-o-scale',
             self::DiferenciaDias => 'heroicon-o-calendar',
             self::SuperaTope => 'heroicon-o-exclamation-triangle',
+            self::IncidenciaOmitidaSua => 'heroicon-o-banknotes',
+            self::NssDiscrepante => 'heroicon-o-identification',
             self::FaltaSua => 'heroicon-o-question-mark-circle',
             self::Faltante => 'heroicon-o-x-circle',
         };

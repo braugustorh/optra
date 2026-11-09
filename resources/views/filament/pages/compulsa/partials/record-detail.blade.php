@@ -77,6 +77,16 @@
         <div>
             <dt class="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide">NSS</dt>
             <dd class="font-mono font-semibold text-gray-900 dark:text-white">{{ $record->nss }}</dd>
+            @if(! empty($desglose['nss_discrepante_sua']['nss_sua_detectado']))
+                <span class="inline-block mt-1 text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 font-mono" title="NSS capturado en SUA">
+                    SUA: {{ $desglose['nss_discrepante_sua']['nss_sua_detectado'] }}
+                </span>
+            @endif
+            @if(! empty($desglose['nss_discrepante_nomina']['nss_nomina_detectado']))
+                <span class="inline-block mt-1 text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 font-mono" title="NSS en Nómina">
+                    Nóm: {{ $desglose['nss_discrepante_nomina']['nss_nomina_detectado'] }}
+                </span>
+            @endif
         </div>
         @if($record->rfc)
         <div>
@@ -157,6 +167,11 @@
             <div class="text-sm space-y-1">
                 <div><span class="text-gray-500">Días:</span> <span class="font-semibold">{{ $record->dias_sua ?? '—' }}</span></div>
                 <div><span class="text-gray-500">SDI:</span> <span class="font-semibold">$ {{ number_format((float)($record->sdi_sua ?? 0), 4) }}</span></div>
+                @if(! empty($desglose['nss_discrepante_sua']['nss_sua_detectado']))
+                    <div class="pt-1 border-t border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-300">
+                        NSS capturado: <span class="font-mono font-medium">{{ $desglose['nss_discrepante_sua']['nss_sua_detectado'] }}</span>
+                    </div>
+                @endif
             </div>
         </div>
 
@@ -172,10 +187,23 @@
                 @endif
             </div>
             <div class="text-sm space-y-1">
-                <div><span class="text-gray-500">Días:</span> <span class="font-semibold">{{ $record->dias_nomina ?? '—' }}</span></div>
-                <div><span class="text-gray-500">SDI:</span> <span class="font-semibold">$ {{ number_format((float)($record->sdi_nomina ?? 0), 4) }}</span></div>
+                <div><span class="text-gray-500">Asistencias:</span> <span class="font-semibold">{{ $record->dias_nomina ?? '—' }} días</span></div>
+                <div><span class="text-gray-500">SBC:</span> <span class="font-semibold">$ {{ number_format((float)($record->sdi_nomina ?? 0), 4) }}</span></div>
                 @if($sdiTopadoDec !== null)
-                    <div class="text-xs text-gray-500">SDI topado: $ {{ number_format((float)$sdiTopadoDec, 4) }}</div>
+                    <div class="text-xs text-gray-500">SBC topado: $ {{ number_format((float)$sdiTopadoDec, 4) }}</div>
+                @endif
+                @if(($record->dias_faltas_nomina ?? 0) > 0 || ($record->dias_incapacidad_nomina ?? 0) > 0 || ($record->dias_vacaciones_nomina ?? 0) > 0)
+                    <div class="pt-1 border-t border-gray-200 dark:border-gray-700 text-xs flex flex-wrap gap-1">
+                        @if(($record->dias_faltas_nomina ?? 0) > 0)
+                            <span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 font-medium">{{ $record->dias_faltas_nomina }} faltas</span>
+                        @endif
+                        @if(($record->dias_incapacidad_nomina ?? 0) > 0)
+                            <span class="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200 font-medium">{{ $record->dias_incapacidad_nomina }} incap.</span>
+                        @endif
+                        @if(($record->dias_vacaciones_nomina ?? 0) > 0)
+                            <span class="px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200 font-medium">{{ $record->dias_vacaciones_nomina }} vac.</span>
+                        @endif
+                    </div>
                 @endif
             </div>
         </div>
@@ -199,12 +227,16 @@
             <div class="font-semibold">$ {{ number_format((float)$valorUma, 4) }}</div>
         </div>
         @endif
-        @if($diasDeclarado !== null)
         <div>
-            <div class="text-gray-500">Días cotizados</div>
-            <div class="font-semibold">{{ $diasDeclarado }} días</div>
+            <div class="text-gray-500">Días cotizados (Art. 31)</div>
+            <div class="font-semibold">
+                @if(($record->dias_eym ?? null) !== null && ($record->dias_resto ?? null) !== null && $record->dias_eym !== $record->dias_resto)
+                    EyM: {{ $record->dias_eym }} d | Resto: {{ $record->dias_resto }} d
+                @else
+                    {{ $record->dias_resto ?? $diasDeclarado }} días
+                @endif
+            </div>
         </div>
-        @endif
     </div>
 
     {{-- BLOQUE 1: Cuotas Obrero-Patronales (Seguridad Social) --}}

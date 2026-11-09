@@ -32,6 +32,10 @@ class ReconcileCalculationAction
 {
     public const EPSILON_MONEY = 0.01;
 
+    public function __construct(
+        private readonly LinkDiscrepantRecordsAction $linkDiscrepancies = new LinkDiscrepantRecordsAction(),
+    ) {}
+
     /**
      * @return array<string, float|int>
      */
@@ -47,7 +51,16 @@ class ReconcileCalculationAction
             ? $calculation->tipo_periodo
             : PeriodType::from((string) $calculation->tipo_periodo);
 
+        $mes = (int) $calculation->mes_bimestre;
+        $ejercicio = (int) $calculation->ejercicio;
+        $diasCalendarioPeriodo = $tipo === PeriodType::Bimestral
+            ? (cal_days_in_month(CAL_GREGORIAN, max(1, ($mes * 2) - 1), $ejercicio) + cal_days_in_month(CAL_GREGORIAN, max(2, min(12, $mes * 2)), $ejercicio))
+            : cal_days_in_month(CAL_GREGORIAN, max(1, min(12, $mes)), $ejercicio);
+
         [$emaRates, $ebaRates, $tablaCesantia, $exencionSm] = $this->resolveRates($calculation);
+
+        // Pre-conciliación: Vincular discrepancias de NSS (errores mecanográficos SUA/Nómina detectados por CURP/RFC/Nombre)
+        $this->linkDiscrepancies->execute($calculation);
 
         $totales = [
             'total_empleados' => 0,
@@ -62,6 +75,7 @@ class ReconcileCalculationAction
                 ->orderBy('id')
                 ->chunkById(500, function ($chunk) use (
                     $tipo,
+                    $diasCalendarioPeriodo,
                     $emaRates,
                     $ebaRates,
                     $tablaCesantia,
@@ -76,6 +90,7 @@ class ReconcileCalculationAction
                         $result = $this->reconcileRecord(
                             $record,
                             $tipo,
+                            $diasCalendarioPeriodo,
                             $emaRates,
                             $ebaRates,
                             $tablaCesantia,
@@ -166,6 +181,7 @@ class ReconcileCalculationAction
     private function reconcileRecord(
         CalculationRecord $record,
         PeriodType $tipo,
+        int $diasCalendarioPeriodo,
         array $emaRates,
         array $ebaRates,
         array $tablaCesantia,
@@ -175,9 +191,23 @@ class ReconcileCalculationAction
         float $valorUma,
         float $primaRiesgo,
     ): array {
-        // Prioridad para lo "declarado por el patrón": Nómina > SUA > IMSS
+        // Prioridad absoluta al SBC declarado: Nómina > SUA > IMSS
         $sdiDeclaradoRaw = $this->firstNonNull($record->sdi_nomina, $record->sdi_sua, $record->sdi_imss);
-        $diasDeclarado = $this->firstNonNull($record->dias_nomina, $record->dias_sua, $record->dias_imss);
+
+        // Determinación de días vigentes base y vectores duales (Art. 31 LSS)
+        $diasVigentesBase = $record->dias_imss ?? $record->dias_sua ?? $diasCalendarioPeriodo;
+        $faltas = (int) ($record->dias_faltas_nomina ?? 0);
+        $incapacidades = (int) ($record->dias_incapacidad_nomina ?? 0);
+        $vacaciones = (int) ($record->dias_vacaciones_nomina ?? 0);
+
+        if ($record->presente_nomina && ($faltas > 0 || $incapacidades > 0)) {
+            $faltasAplicables = min($faltas, 7);
+            $diasEyM = max(0, $diasVigentesBase - $incapacidades);
+            $diasResto = max(0, $diasVigentesBase - $incapacidades - $faltasAplicables);
+        } else {
+            $diasEyM = $diasVigentesBase;
+            $diasResto = $diasVigentesBase;
+        }
 
         $sdiTopado = $this->applyCapAndFloor(
             $sdiDeclaradoRaw !== null ? (float) $sdiDeclaradoRaw : null,
@@ -192,14 +222,15 @@ class ReconcileCalculationAction
         );
 
         // 1. Cuota del IMSS: Usar cuotas extraídas directamente del EMA/EBA si existen; de lo contrario fallback a cálculo
+        $existingDesglose = is_array($record->desglose_cuotas)
+            ? $record->desglose_cuotas
+            : (is_string($record->desglose_cuotas) ? json_decode($record->desglose_cuotas, true) : []);
+        $nssDiscrepanteSua = $existingDesglose['nss_discrepante_sua'] ?? null;
+        $nssDiscrepanteNomina = $existingDesglose['nss_discrepante_nomina'] ?? null;
+
         $extractedImssBreak = null;
-        if (! empty($record->desglose_cuotas) && is_array($record->desglose_cuotas) && ! empty($record->desglose_cuotas['imss'])) {
-            $extractedImssBreak = $record->desglose_cuotas['imss'];
-        } elseif (! empty($record->desglose_cuotas) && is_string($record->desglose_cuotas)) {
-            $decoded = json_decode($record->desglose_cuotas, true);
-            if (! empty($decoded['imss'])) {
-                $extractedImssBreak = $decoded['imss'];
-            }
+        if (! empty($existingDesglose['imss'])) {
+            $extractedImssBreak = $existingDesglose['imss'];
         }
 
         // Extracción de cuotas reportadas en el archivo SUA (si vinieron en la Cédula SUA)
@@ -241,15 +272,16 @@ class ReconcileCalculationAction
                     ],
                 ];
             } else {
+                $diasImssBase = (int) ($record->dias_imss ?? $diasVigentesBase);
                 $cuotaImssBreak = ($sdiImssTopado !== null && $record->dias_imss !== null)
-                    ? $this->calculateCuota($tipo, (float) $sdiImssTopado, (int) $record->dias_imss, $emaRates, $ebaRates, $valorUma, $primaRiesgo, $salarioMinimo, $tablaCesantia, $exencionSm)
+                    ? $this->calculateCuota($tipo, (float) $sdiImssTopado, $diasImssBase, $diasImssBase, $emaRates, $ebaRates, $valorUma, $primaRiesgo, $salarioMinimo, $tablaCesantia, $exencionSm)
                     : ['total' => 0.0, 'patronal' => 0.0, 'obrera' => 0.0, 'desglose' => []];
                 $subtotalCuotasImss = round($cuotaImssBreak['total'], 2);
             }
 
-            // Subtotal Cuotas Ordinarias Patrón
-            $cuotaPatronBreak = ($sdiTopado !== null && $diasDeclarado !== null)
-                ? $this->calculateCuota($tipo, (float) $sdiTopado, (int) $diasDeclarado, $emaRates, $ebaRates, $valorUma, $primaRiesgo, $salarioMinimo, $tablaCesantia, $exencionSm)
+            // Subtotal Cuotas Ordinarias Patrón (con vector de días resto que descuenta ausentismos e incapacidades)
+            $cuotaPatronBreak = ($sdiTopado !== null && $diasResto > 0)
+                ? $this->calculateCuota($tipo, (float) $sdiTopado, $diasEyM, $diasResto, $emaRates, $ebaRates, $valorUma, $primaRiesgo, $salarioMinimo, $tablaCesantia, $exencionSm)
                 : ['total' => 0.0, 'patronal' => 0.0, 'obrera' => 0.0, 'desglose' => []];
             $subtotalCuotasPatron = round($cuotaPatronBreak['total'], 2);
 
@@ -283,6 +315,12 @@ class ReconcileCalculationAction
                 $sdiDeclaradoRaw !== null ? (float) $sdiDeclaradoRaw : null,
                 $topeSdi,
                 $diferenciaCuotas,
+                $diasVigentesBase,
+                $diasEyM,
+                $diasResto,
+                $faltas,
+                $incapacidades,
+                $cuotaPatron,
             );
 
             // Alertas de Crédito
@@ -320,6 +358,8 @@ class ReconcileCalculationAction
 
             $record->update([
                 'sdi_topado' => $sdiTopado,
+                'dias_eym' => $diasEyM,
+                'dias_resto' => $diasResto,
                 'cuota_imss' => $cuotaImss,
                 'cuota_sua' => (float) ($extractedSuaBreak['total'] ?? $record->cuota_sua ?? 0.0),
                 'cuota_patron' => $cuotaPatron,
@@ -335,7 +375,13 @@ class ReconcileCalculationAction
                     'sdi_declarado' => $sdiDeclaradoRaw !== null ? (float) $sdiDeclaradoRaw : null,
                     'sdi_topado_declarado' => $sdiTopado,
                     'sdi_topado_imss' => $sdiImssTopado,
-                    'dias_declarado' => $diasDeclarado,
+                    'dias_declarado' => $diasResto,
+                    'dias_vigentes' => $diasVigentesBase,
+                    'dias_eym' => $diasEyM,
+                    'dias_resto' => $diasResto,
+                    'faltas_nomina' => $faltas,
+                    'incapacidades_nomina' => $incapacidades,
+                    'vacaciones_nomina' => $vacaciones,
                     'prima_riesgo' => $primaRiesgo,
                     'valor_uma' => $valorUma,
                     'patron' => array_merge($cuotaPatronBreak, [
@@ -347,6 +393,8 @@ class ReconcileCalculationAction
                         'total' => $cuotaImss,
                     ]),
                     'sua' => $extractedSuaBreak,
+                    'nss_discrepante_sua' => $nssDiscrepanteSua,
+                    'nss_discrepante_nomina' => $nssDiscrepanteNomina,
                     'credito_infonavit' => $hasCredit ? [
                         'numero_credito' => $numeroCredito,
                         'amortizacion_imss' => $extractedAmortImss,
@@ -370,15 +418,16 @@ class ReconcileCalculationAction
             $cuotaImssBreak = $extractedImssBreak;
             $cuotaImss = round((float) ($cuotaImssBreak['total'] ?? $record->cuota_imss), 2);
         } else {
+            $diasImssBase = (int) ($record->dias_imss ?? $diasVigentesBase);
             $cuotaImssBreak = ($sdiImssTopado !== null && $record->dias_imss !== null)
-                ? $this->calculateCuota($tipo, (float) $sdiImssTopado, (int) $record->dias_imss, $emaRates, $ebaRates, $valorUma, $primaRiesgo, $salarioMinimo, $tablaCesantia, $exencionSm)
+                ? $this->calculateCuota($tipo, (float) $sdiImssTopado, $diasImssBase, $diasImssBase, $emaRates, $ebaRates, $valorUma, $primaRiesgo, $salarioMinimo, $tablaCesantia, $exencionSm)
                 : ['total' => 0.0, 'patronal' => 0.0, 'obrera' => 0.0, 'desglose' => []];
             $cuotaImss = round($cuotaImssBreak['total'], 2);
         }
 
-        // 2. Cuota del Patrón: calculada desde la declaración patronal (Nómina / SUA)
-        $cuotaPatronBreak = ($sdiTopado !== null && $diasDeclarado !== null)
-            ? $this->calculateCuota($tipo, (float) $sdiTopado, (int) $diasDeclarado, $emaRates, $ebaRates, $valorUma, $primaRiesgo, $salarioMinimo, $tablaCesantia, $exencionSm)
+        // 2. Cuota del Patrón: calculada aplicando vectores duales Art. 31 LSS
+        $cuotaPatronBreak = ($sdiTopado !== null && $diasResto > 0)
+            ? $this->calculateCuota($tipo, (float) $sdiTopado, $diasEyM, $diasResto, $emaRates, $ebaRates, $valorUma, $primaRiesgo, $salarioMinimo, $tablaCesantia, $exencionSm)
             : ['total' => 0.0, 'patronal' => 0.0, 'obrera' => 0.0, 'desglose' => []];
 
         $cuotaPatron = round($cuotaPatronBreak['total'], 2);
@@ -393,6 +442,12 @@ class ReconcileCalculationAction
             $sdiDeclaradoRaw !== null ? (float) $sdiDeclaradoRaw : null,
             $topeSdi,
             $diferencia,
+            $diasVigentesBase,
+            $diasEyM,
+            $diasResto,
+            $faltas,
+            $incapacidades,
+            $cuotaPatron,
         );
 
         $estatus = $this->determineEstatus($alertas);
@@ -400,24 +455,34 @@ class ReconcileCalculationAction
 
         $record->update([
             'sdi_topado' => $sdiTopado,
+            'dias_eym' => $diasEyM,
+            'dias_resto' => $diasResto,
             'cuota_imss' => $cuotaImss,
             'cuota_sua' => (float) ($extractedSuaBreak['total'] ?? $record->cuota_sua ?? 0.0),
             'cuota_patron' => $cuotaPatron,
             'diferencia_total' => $diferencia,
             'supera_tope_uma' => $superaTope,
-            'alertas_json' => $alertas,
+            'alertas_json' => array_values(array_unique($alertas)),
             'observaciones' => $observaciones !== [] ? implode(' | ', $observaciones) : null,
             'desglose_cuotas' => [
                 'tipo' => $tipo->value,
                 'sdi_declarado' => $sdiDeclaradoRaw !== null ? (float) $sdiDeclaradoRaw : null,
                 'sdi_topado_declarado' => $sdiTopado,
                 'sdi_topado_imss' => $sdiImssTopado,
-                'dias_declarado' => $diasDeclarado,
+                'dias_declarado' => $diasResto,
+                'dias_vigentes' => $diasVigentesBase,
+                'dias_eym' => $diasEyM,
+                'dias_resto' => $diasResto,
+                'faltas_nomina' => $faltas,
+                'incapacidades_nomina' => $incapacidades,
+                'vacaciones_nomina' => $vacaciones,
                 'prima_riesgo' => $primaRiesgo,
                 'valor_uma' => $valorUma,
                 'patron' => $cuotaPatronBreak,
                 'imss' => $cuotaImssBreak,
                 'sua' => $extractedSuaBreak,
+                'nss_discrepante_sua' => $nssDiscrepanteSua,
+                'nss_discrepante_nomina' => $nssDiscrepanteNomina,
             ],
             'estatus_conciliacion' => $estatus,
         ]);
@@ -432,6 +497,7 @@ class ReconcileCalculationAction
 
     /**
      * Calcula la cuota total (patronal + obrera) con desglose por rama, según tipo de período.
+     * Aplica los vectores duales conforme al Art. 31 LSS (EyM vs Resto de ramas).
      *
      * @param  array<string, float>  $emaRates
      * @param  array<string, float>  $ebaRates
@@ -440,7 +506,8 @@ class ReconcileCalculationAction
     private function calculateCuota(
         PeriodType $tipo,
         float $sdiTopado,
-        int $dias,
+        int $diasEyM,
+        int $diasResto,
         array $emaRates,
         array $ebaRates,
         float $valorUma,
@@ -450,8 +517,8 @@ class ReconcileCalculationAction
         bool $exencionSm,
     ): array {
         return $tipo === PeriodType::Bimestral
-            ? $this->calculateEba($sdiTopado, $dias, $ebaRates, $salarioMinimo, $valorUma, $tablaCesantia, $exencionSm)
-            : $this->calculateEma($sdiTopado, $dias, $emaRates, $valorUma, $primaRiesgo, $salarioMinimo, $exencionSm);
+            ? $this->calculateEba($sdiTopado, $diasResto, $ebaRates, $salarioMinimo, $valorUma, $tablaCesantia, $exencionSm)
+            : $this->calculateEma($sdiTopado, $diasEyM, $diasResto, $emaRates, $valorUma, $primaRiesgo, $salarioMinimo, $exencionSm);
     }
 
     /**
@@ -460,29 +527,35 @@ class ReconcileCalculationAction
      */
     private function calculateEma(
         float $sdiTopado,
-        int $dias,
+        int $diasEyM,
+        int $diasResto,
         array $rates,
         float $valorUma,
         float $primaRiesgo,
         float $salarioMinimo,
         bool $exencionSm,
     ): array {
-        $baseSdi = $sdiTopado * $dias;
-        $baseUma = $valorUma * $dias;
+        $baseSdiEyM = $sdiTopado * $diasEyM;
+        $baseUmaEyM = $valorUma * $diasEyM;
         $tresUma = 3.0 * $valorUma;
-        $baseExcedente = $sdiTopado > $tresUma ? ($sdiTopado - $tresUma) * $dias : 0.0;
+        $baseExcedenteEyM = $sdiTopado > $tresUma ? ($sdiTopado - $tresUma) * $diasEyM : 0.0;
 
-        $cuotaFija = $baseUma * $this->pct($rates, 'cuota_fija_patronal');
-        $excedentePatron = $baseExcedente * $this->pct($rates, 'excedente_patronal');
-        $excedenteObrero = $baseExcedente * $this->pct($rates, 'excedente_obrero');
-        $prestDineroPatron = $baseSdi * $this->pct($rates, 'prest_dinero_patronal');
-        $prestDineroObrero = $baseSdi * $this->pct($rates, 'prest_dinero_obrero');
-        $gmpPatron = $baseSdi * $this->pct($rates, 'gmp_patronal');
-        $gmpObrero = $baseSdi * $this->pct($rates, 'gmp_obrero');
-        $riesgos = $baseSdi * $primaRiesgo; // prima_riesgo ya es fracción (ej. 0.05470)
-        $ivPatron = $baseSdi * $this->pct($rates, 'iv_patronal');
-        $ivObrero = $baseSdi * $this->pct($rates, 'iv_obrero');
-        $guarderias = $baseSdi * $this->pct($rates, 'guarderias_patronal');
+        $baseSdiResto = $sdiTopado * $diasResto;
+
+        // Grupo 1: Días EyM (Art. 31 Fracc. I LSS: No descuenta faltas, sí descuenta incapacidades)
+        $cuotaFija = $baseUmaEyM * $this->pct($rates, 'cuota_fija_patronal');
+        $excedentePatron = $baseExcedenteEyM * $this->pct($rates, 'excedente_patronal');
+        $excedenteObrero = $baseExcedenteEyM * $this->pct($rates, 'excedente_obrero');
+        $prestDineroPatron = $baseSdiEyM * $this->pct($rates, 'prest_dinero_patronal');
+        $prestDineroObrero = $baseSdiEyM * $this->pct($rates, 'prest_dinero_obrero');
+        $gmpPatron = $baseSdiEyM * $this->pct($rates, 'gmp_patronal');
+        $gmpObrero = $baseSdiEyM * $this->pct($rates, 'gmp_obrero');
+
+        // Grupo 2: Días Resto (Descuenta faltas [máx. 7 días] e incapacidades médicas)
+        $riesgos = $baseSdiResto * $primaRiesgo; // prima_riesgo ya es fracción (ej. 0.02500)
+        $ivPatron = $baseSdiResto * $this->pct($rates, 'iv_patronal');
+        $ivObrero = $baseSdiResto * $this->pct($rates, 'iv_obrero');
+        $guarderias = $baseSdiResto * $this->pct($rates, 'guarderias_patronal');
 
         // Art. 36 LSS: Si salario mínimo, el patrón absorbe íntegramente las cuotas obreras
         if ($exencionSm && $salarioMinimo > 0 && $sdiTopado <= ($salarioMinimo + 0.01)) {
@@ -543,14 +616,14 @@ class ReconcileCalculationAction
      */
     private function calculateEba(
         float $sdiTopado,
-        int $dias,
+        int $diasResto,
         array $rates,
         float $salarioMinimo,
         float $valorUma,
         array $tablaCesantia,
         bool $exencionSm,
     ): array {
-        $baseSdi = $sdiTopado * $dias;
+        $baseSdi = $sdiTopado * $diasResto;
 
         $retiro = $baseSdi * $this->pct($rates, 'retiro_patronal');
 
@@ -647,10 +720,48 @@ class ReconcileCalculationAction
     /**
      * @return array{0: array<int, string>, 1: array<int, string>, 2: bool}
      */
-    private function buildAlerts(CalculationRecord $record, ?float $sdiDeclarado, float $topeSdi, float $diferencia): array
-    {
+    private function buildAlerts(
+        CalculationRecord $record,
+        ?float $sdiDeclarado,
+        float $topeSdi,
+        float $diferencia,
+        int $diasVigentesBase,
+        int $diasEyM,
+        int $diasResto,
+        int $faltas,
+        int $incapacidades,
+        float $cuotaPatron,
+    ): array {
         $alertas = [];
         $observaciones = [];
+
+        // Conservar alertas de vinculación secundaria (NSS discrepante detectado por CURP/RFC/Nombre)
+        if (! empty($record->alertas_json)) {
+            foreach ($record->alertas_json as $previa) {
+                if (in_array($previa, ['nss_discrepante_sua', 'nss_discrepante_nomina'], true)) {
+                    $alertas[] = $previa;
+                    if ($previa === 'nss_discrepante_sua') {
+                        $desgloseActual = is_array($record->desglose_cuotas) ? $record->desglose_cuotas : [];
+                        $discrepancia = $desgloseActual['nss_discrepante_sua'] ?? [];
+                        $nssSua = $discrepancia['nss_sua_detectado'] ?? 'N/A';
+                        $observaciones[] = sprintf(
+                            'Discrepancia de NSS detectada: En Nómina e IMSS aparece con NSS %s, pero en el SUA fue registrado con NSS %s (coincidencia por CURP/Nombre). Las cuotas coinciden, pero debe corregirse en el SUA para prevenir homonimias ante el IMSS.',
+                            $record->nss,
+                            $nssSua
+                        );
+                    } elseif ($previa === 'nss_discrepante_nomina') {
+                        $desgloseActual = is_array($record->desglose_cuotas) ? $record->desglose_cuotas : [];
+                        $discrepancia = $desgloseActual['nss_discrepante_nomina'] ?? [];
+                        $nssNomina = $discrepancia['nss_nomina_detectado'] ?? 'N/A';
+                        $observaciones[] = sprintf(
+                            'Discrepancia de NSS detectada: En IMSS y SUA aparece con NSS %s, pero en Nómina figura con NSS %s (coincidencia por CURP/Nombre).',
+                            $record->nss,
+                            $nssNomina
+                        );
+                    }
+                }
+            }
+        }
 
         if (! $record->presente_imss) {
             $alertas[] = 'falta_imss';
@@ -669,30 +780,73 @@ class ReconcileCalculationAction
         if ($superaTope) {
             $alertas[] = 'supera_tope_uma';
             $observaciones[] = sprintf(
-                'SDI declarado %.4f supera el tope de UMAs (%.4f).',
+                'SBC declarado %.4f supera el tope de 25 UMAs (%.4f).',
                 $sdiDeclarado,
                 $topeSdi,
             );
         }
 
-        if ($record->presente_imss && ($record->presente_nomina || $record->presente_sua)) {
-            $diasComparar = $record->dias_nomina ?? $record->dias_sua;
-            if ($diasComparar !== null && $diasComparar !== $record->dias_imss) {
+        // CASO 4: Exceso de ausentismo (> 7 días)
+        if ($faltas > 7) {
+            $alertas[] = 'exceso_tope_ausentismo';
+            $observaciones[] = sprintf(
+                'El trabajador acumula %d faltas en el mes. El SUA solo permite descontar hasta 7 días de ausentismo mensual (Art. 31 Fracc. I LSS). Evaluar si procede baja por ausentismo o captura en periodos posteriores.',
+                $faltas
+            );
+        }
+
+        // CASO 2: Incidencia omitida en SUA (Ahorro potencial detectado)
+        $incidenciaOmitidaSua = false;
+        if ($record->presente_nomina && $record->presente_sua && ($faltas > 0 || $incapacidades > 0)) {
+            $diasSua = (int) ($record->dias_sua ?? 0);
+            if ($diasSua > $diasResto) {
+                $cuotaSua = (float) ($record->cuota_sua ?? 0);
+                $ahorro = round($cuotaSua - $cuotaPatron, 2);
+                if ($ahorro > 0.05) {
+                    $incidenciaOmitidaSua = true;
+                    $alertas[] = 'incidencia_omitida_en_sua';
+                    $incDesc = [];
+                    if ($faltas > 0) {
+                        $incDesc[] = "{$faltas} falta(s)";
+                    }
+                    if ($incapacidades > 0) {
+                        $incDesc[] = "{$incapacidades} incapacidad(es)";
+                    }
+                    $observaciones[] = sprintf(
+                        'El trabajador registra %s en nómina no capturadas en el SUA. Capturarlas en el SUA generará un ahorro real de $%s en las cuotas obrero-patronales.',
+                        implode(' y ', $incDesc),
+                        number_format($ahorro, 2)
+                    );
+                }
+            }
+        }
+
+        // Comparación de días
+        if ($record->presente_imss) {
+            if ($record->dias_imss !== null && $record->dias_imss !== $diasVigentesBase) {
                 $alertas[] = 'diferencia_dias';
                 $observaciones[] = sprintf(
-                    'Días distintos: IMSS %s vs %s %s (posible incapacidad o falta no capturada).',
-                    $record->dias_imss ?? '—',
-                    $record->presente_nomina ? 'Nómina' : 'SUA',
-                    $diasComparar,
+                    'Días vigentes distintos: IMSS %s vs %s en período natural (posible alta o baja no reflejada).',
+                    $record->dias_imss,
+                    $diasVigentesBase
+                );
+            } elseif (! $incidenciaOmitidaSua && $record->dias_imss !== null && $record->dias_imss !== $diasResto && ($faltas > 0 || $incapacidades > 0)) {
+                $observaciones[] = sprintf(
+                    'La cuota EMA considera %d días. Conforme al Art. 39-A LSS, la EMA se emite sin conocer ausentismos del mes; pagar conforme a Cédula SUA (%d días).',
+                    $record->dias_imss,
+                    $diasResto
                 );
             }
+        }
 
+        // Comparación de salarios (SBC/SDI)
+        if ($record->presente_imss && ($record->presente_nomina || $record->presente_sua)) {
             $sdiComparar = $record->sdi_nomina ?? $record->sdi_sua;
             if ($sdiComparar !== null && $record->sdi_imss !== null
-                && abs((float) $sdiComparar - (float) $record->sdi_imss) > 0.0001) {
+                && abs((float) $sdiComparar - (float) $record->sdi_imss) > 0.01) {
                 $alertas[] = 'diferencia_sdi';
                 $observaciones[] = sprintf(
-                    'SDI distinto: IMSS %.4f vs %s %.4f.',
+                    'SBC distinto: IMSS %.4f vs %s %.4f (revisar aumento salarial o variable bimestral).',
                     (float) $record->sdi_imss,
                     $record->presente_nomina ? 'Nómina' : 'SUA',
                     (float) $sdiComparar,
@@ -700,7 +854,7 @@ class ReconcileCalculationAction
             }
         }
 
-        if (abs($diferencia) > self::EPSILON_MONEY) {
+        if (abs($diferencia) > self::EPSILON_MONEY && ! $incidenciaOmitidaSua) {
             $alertas[] = 'diferencia_cuota';
         }
 
@@ -708,8 +862,8 @@ class ReconcileCalculationAction
     }
 
     /**
-     * Jerarquía del semáforo: faltante > falta_sua > supera_tope > diferencia_dias
-     *   > diferencia_sdi > diferencia_cuota > ok
+     * Jerarquía del semáforo: faltante > falta_sua > supera_tope > incidencia_omitida_sua
+     *   > diferencia_dias > diferencia_sdi > diferencia_cuota > diferencia_credito > ok
      *
      * @param  array<int, string>  $alertas
      */
@@ -723,6 +877,12 @@ class ReconcileCalculationAction
         }
         if (in_array('supera_tope_uma', $alertas, true)) {
             return 'supera_tope';
+        }
+        if (in_array('incidencia_omitida_en_sua', $alertas, true)) {
+            return 'incidencia_omitida_sua';
+        }
+        if (in_array('nss_discrepante_sua', $alertas, true) || in_array('nss_discrepante_nomina', $alertas, true)) {
+            return 'nss_discrepante';
         }
         if (in_array('diferencia_dias', $alertas, true)) {
             return 'diferencia_dias';

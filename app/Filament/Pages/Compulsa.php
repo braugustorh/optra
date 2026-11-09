@@ -578,28 +578,31 @@ class Compulsa extends Page implements HasTable
                     ->label('Días Nóm.')
                     ->alignCenter()
                     ->placeholder('—')
+                    ->description(fn(CalculationRecord $r): ?string => ($r->dias_faltas_nomina ?? 0) > 0
+                        ? "{$r->dias_faltas_nomina} falta(s)"
+                        : (($r->dias_incapacidad_nomina ?? 0) > 0 ? "{$r->dias_incapacidad_nomina} incap." : null))
                     ->color(fn(CalculationRecord $r): ?string => (
                         $r->dias_imss !== null
-                        && $r->dias_nomina !== null
-                        && $r->dias_imss !== $r->dias_nomina
+                        && $r->dias_resto !== null
+                        && $r->dias_imss !== $r->dias_resto
                     ) ? 'warning' : null)
                     ->tooltip(fn(CalculationRecord $r): ?string => (
                         $r->dias_imss !== null
-                        && $r->dias_nomina !== null
-                        && $r->dias_imss !== $r->dias_nomina
-                    ) ? 'Posible incapacidad, falta o alta no capturada en SUA' : null),
+                        && $r->dias_resto !== null
+                        && $r->dias_imss !== $r->dias_resto
+                    ) ? 'Diferencia en días cotizados por ausentismos, incapacidades o alta/baja' : null),
                 TextColumn::make('dias_sua')
                     ->label('Días SUA')
                     ->alignCenter()
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('sdi_imss')
-                    ->label('SDI IMSS')
+                    ->label('SBC IMSS')
                     ->alignRight()
                     ->placeholder('—')
                     ->formatStateUsing(fn($state) => $state !== null ? '$ ' . number_format((float) $state, 4) : '—'),
                 TextColumn::make('sdi_nomina')
-                    ->label('SDI Nóm.')
+                    ->label('SBC Nóm.')
                     ->alignRight()
                     ->placeholder('—')
                     ->formatStateUsing(fn($state) => $state !== null ? '$ ' . number_format((float) $state, 4) : '—')
@@ -612,7 +615,7 @@ class Compulsa extends Page implements HasTable
                         $r->sdi_imss !== null
                         && $r->sdi_nomina !== null
                         && abs((float) $r->sdi_imss - (float) $r->sdi_nomina) > 0.01
-                    ) ? 'El SDI declarado difiere del cobrado por IMSS — revisar aumentos, prima, o topes' : null),
+                    ) ? 'El SBC declarado difiere del cobrado por IMSS — revisar aumentos salariales o variables bimestrales' : null),
                 TextColumn::make('sdi_sua')
                     ->label('SDI SUA')
                     ->alignRight()

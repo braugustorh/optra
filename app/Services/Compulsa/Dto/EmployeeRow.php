@@ -19,6 +19,13 @@ final class EmployeeRow
         public readonly array $raw = [],
         public readonly ?float $cuotaTotal = null,
         public readonly array $cuotasDetalle = [],
+        public readonly int $diasFaltas = 0,
+        public readonly int $diasIncapacidad = 0,
+        public readonly int $diasVacaciones = 0,
+        public readonly ?float $sdiFijo = null,
+        public readonly ?float $sdiVariable = null,
+        public readonly ?string $fechaIngreso = null,
+        public readonly ?string $fechaBaja = null,
     ) {
     }
 
@@ -34,6 +41,13 @@ final class EmployeeRow
             'curp' => $this->curp,
             'cuota_total' => $this->cuotaTotal,
             'cuotas_detalle' => $this->cuotasDetalle,
+            'dias_faltas' => $this->diasFaltas,
+            'dias_incapacidad' => $this->diasIncapacidad,
+            'dias_vacaciones' => $this->diasVacaciones,
+            'sdi_fijo' => $this->sdiFijo,
+            'sdi_variable' => $this->sdiVariable,
+            'fecha_ingreso' => $this->fechaIngreso,
+            'fecha_baja' => $this->fechaBaja,
         ];
     }
 }
