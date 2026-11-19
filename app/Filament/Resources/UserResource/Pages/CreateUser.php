@@ -270,7 +270,7 @@ class CreateUser extends CreateRecord
                             'Ciencias de la Salud' => 'Ciencias de la Salud',
                             'Artes' => 'Artes',
                             'Administración' => 'Administración',
-                            'Teconología' => 'Teconología',
+                            'Tecnología' => 'Tecnología',
                             'Otra' => 'Otra',
                         ])
                         ->default(null),

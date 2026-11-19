@@ -59,6 +59,7 @@ class User extends Authenticatable implements FilamentUser
         'career',
         // Laboral
         'employee_code',
+        'employee_number',
         'sede_id',
         'razon_social_id',
         'department_id',
@@ -78,6 +79,7 @@ class User extends Authenticatable implements FilamentUser
         'alternate_email',
         'email_verified_at',
         'password',
+        'must_change_password',
         'profile_photo',
         'status',
     ];
@@ -100,6 +102,7 @@ class User extends Authenticatable implements FilamentUser
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'must_change_password' => 'boolean',
     ];
 
     public function sede()
