@@ -19,7 +19,7 @@ class RiskFactorSurveyOrganizational extends Model
     ];
 
     protected $casts = [
-        'response_value' => 'integer',
+        'response_value' => 'string',
         'equivalence_response' => 'integer',
         'status' => 'boolean',
     ];
